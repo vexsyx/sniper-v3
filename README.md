@@ -16,6 +16,10 @@
   <a href="https://github.com/vexthecoder/sniper-v3/releases">
     <img src="https://img.shields.io/badge/Version-3.0.0_BETA_5-4a7bff?style=for-the-badge&logo=github" alt="Latest Release">
   </a>
+  <!-- 
+  change to this once you make a release :D
+  https://img.shields.io/github/v/release/vexthecoder/sniper-v3?style=for-the-badge&logo=github&label=Latest%20Release&logoColor=white 
+  -->
   <a href="LICENSE"><img src="https://img.shields.io/github/license/vexthecoder/sniper-v3?style=for-the-badge&logo=nextdns&label=License&logoColor=white" alt="License"></a>
   <a href="https://python.org/downloads"><img src="https://img.shields.io/badge/Python-3.8+-ffd043?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows | macOS-2d2d2d?style=for-the-badge&logo=files&logoColor=white" alt="Platform"></a>
