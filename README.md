@@ -466,7 +466,7 @@ Consider supporting our developers:
 
 **Get started now with our standalone executable or Python version!**
 
-[![Download EXE](https://img.shields.io/badge/Download_EXE-2d2d2d?style=for-the-badge&logo=googleanalytics&logoColor=white)](https://github.com/vexthecoder/sniper-v3)
+[![Download EXE](https://img.shields.io/badge/Download_EXE-2d2d2d?style=for-the-badge&logo=googleanalytics&logoColor=white)](https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/Sol%20Sniper%20V3.exe)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-2d2d2d?style=for-the-badge&logo=github)](https://github.com/vexthecoder/sniper-v3)
 [![Discord](https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord)](https://discord.gg/RPcPUp47YD)
 
