@@ -1,6 +1,6 @@
 > [!WARNING]  
 > This Repo is **NOT** finished.<br>
-> The source code is still closed source until **Beta 5** is released, so the build script will not work.
+> It will hopefully be finished and fully updated before the first official release.
 
 <div align="center">
 
