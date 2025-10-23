@@ -472,6 +472,6 @@ Consider supporting our developers:
 
 **Made with ❤️ by the Sol Sniper Team**
 
-*Please use responsibly and respect Discord's Terms of Service*
+*Please use responsibly and respect Discord's Terms of Service as well as all Biome Hunt Servers' rules.*
 
 </div>
