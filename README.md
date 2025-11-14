@@ -184,60 +184,26 @@ Our standalone Windows executable provides the ultimate convenience:
 6. Paste and execute:
 
 ```javascript
-// Discord Token Extractor
-const iframe = document.createElement('iframe');
-document.body.appendChild(iframe);
+window.webpackChunkdiscord_app.push([
+	[Symbol()],
+	{},
+	req => {
+		if (!req.c) return;
+		for (let m of Object.values(req.c)) {
+			try {
+				if (!m.exports || m.exports === window) continue;
+				if (m.exports?.getToken) return copy(m.exports.getToken());
+				for (let ex in m.exports) {
+					if (m.exports?.[ex]?.getToken && m.exports[ex][Symbol.toStringTag] !== 'IntlMessagesProxy') return copy(m.exports[ex].getToken());
+				}
+			} catch {}
+		}
+	},
+]);
 
-try {
-    const token = iframe.contentWindow.localStorage.token;
-    
-    if (token) {
-        let tokenValue;
-        try {
-            tokenValue = JSON.parse(token);
-        } catch (e) {
-            tokenValue = token;
-        }
-        
-        const copyToClipboard = async (text) => {
-            try {
-                await navigator.clipboard.writeText(text);
-                return true;
-            } catch (err) {
-                const textArea = document.createElement('textarea');
-                textArea.value = text;
-                document.body.appendChild(textArea);
-                textArea.select();
-                const success = document.execCommand('copy');
-                document.body.removeChild(textArea);
-                return success;
-            }
-        };
-        
-        copyToClipboard(tokenValue).then(success => {
-            if (success) {
-                console.log('✅ Token copied to clipboard: %c%s', 'font-size:16px; color: green;', tokenValue);
-                console.log('📋 Token has been automatically copied to your clipboard!');
-            } else {
-                console.log('✅ Token: %c%s', 'font-size:16px; color: green;', tokenValue);
-                console.log('❌ Could not copy to clipboard. Manually copy the token above.');
-            }
-        });
-        
-    } else {
-        console.log('❌ No token found in localStorage');
-        console.log('%c📱 Mobile Mode Required:', 'font-size:16px; color: orange; font-weight: bold;');
-        console.log('1. Press F12 to open Developer Tools');
-        console.log('2. Click the 📱 mobile device icon');
-        console.log('3. Refresh the page');
-        console.log('4. Run this script again');
-    }
-} catch (e) {
-    console.log('❌ Error:', e.message);
-    console.log('%c📱 Enable mobile mode and try again!', 'font-size:14px; color: orange;');
-} finally {
-    iframe.remove();
-}
+window.webpackChunkdiscord_app.pop();
+console.log('%cSuccess!', 'font-size: 50px');
+console.log(`%cYour token has been copied to your clipboard!`, 'font-size: 16px');
 ```
 
 ### Roblox Cookie Guide
