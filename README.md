@@ -210,7 +210,7 @@ console.log(`%cYour token has been copied to your clipboard!`, 'font-size: 16px'
 
 For Roblox `.ROBLOSECURITY` cookie extraction, follow our video tutorial:
 
-[🎥 Roblox Cookie Tutorial](https://youtu.be/sz07F5inaFg?t=16)
+[🎥 Roblox Cookie Tutorial](https://www.youtube.com/watch?v=S3y1GTPMNBE)
 
 ### 🛠️ Troubleshooting
 - **Token not found?** Ensure mobile mode is enabled
