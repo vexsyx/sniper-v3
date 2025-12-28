@@ -5,25 +5,25 @@
 <div align="center">
 
 <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px;">
-  <img src="https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/assets/snipercat.png" width="80" height="80" style="border-radius: 12px;">
+  <img src="https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/snipercat.png" width="80" height="80" style="border-radius: 12px;">
   <div>
     <h1 style="margin: 0; font-size: 2.5em;">Sol Sniper V3</h1>
-    <p style="margin: 5px 0 0 0; font-size: 1.2em; opacity: 0.8;">The Most Advanced Discord Server Sniper for Sol's RNG</p>
+    <p style="margin: 5px 0 0 0; font-size: 1.2em; opacity: 0.8;">The Most Advanced Roblox Server Sniper for Sol's RNG</p>
   </div>
 </div>
 
 <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 20px 0;">
-  <a href="https://github.com/vexthecoder/sniper-v3/releases">
+  <a href="https://github.com/vexsyx/sniper-v3/releases">
     <img src="https://img.shields.io/badge/Version-3.0.0_BETA_5-4a7bff?style=for-the-badge&logo=github" alt="Latest Release">
   </a>
   <!-- 
   change to this once you make a release :D
-  https://img.shields.io/github/v/release/vexthecoder/sniper-v3?style=for-the-badge&logo=github&label=Latest%20Release&logoColor=white 
+  https://img.shields.io/github/v/release/vexsyx/sniper-v3?style=for-the-badge&logo=github&label=Latest%20Release&logoColor=white 
   -->
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/vexthecoder/sniper-v3?style=for-the-badge&logo=nextdns&label=License&logoColor=white" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/vexsyx/sniper-v3?style=for-the-badge&logo=nextdns&label=License&logoColor=white" alt="License"></a>
   <a href="https://python.org/downloads"><img src="https://img.shields.io/badge/Python-3.8+-ffd043?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows | macOS-2d2d2d?style=for-the-badge&logo=files&logoColor=white" alt="Platform"></a>
-  <a href="https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/Sol Sniper V3.exe"><img src="https://img.shields.io/badge/Standalone_EXE-Download-00c853?style=for-the-badge&logo=googleanalytics&logoColor=white" alt="Standalone EXE"></a>
+  <a href="https://raw.githubusercontent.com/vexsyx/sniper-v3/main/Sol Sniper V3.exe"><img src="https://img.shields.io/badge/Standalone_EXE-Download-00c853?style=for-the-badge&logo=googleanalytics&logoColor=white" alt="Standalone EXE"></a>
 </div>
 
 </div>
@@ -84,7 +84,7 @@ Sol Sniper V3 is a powerful, modern Sol's RNG based app specifically designed to
 
 **For most users, download the pre-built executable:**
 
-1. **Download** the latest release from the [latest release](https://github.com/vexthecoder/sniper-v3/releases/latest)
+1. **Download** the EXE file from the [latest release](https://github.com/vexsyx/sniper-v3/releases/latest)
 2. **Run** `Sol Sniper V3.exe` - No installation needed!
 3. **Configure** your settings and start sniping
 
@@ -100,7 +100,7 @@ Sol Sniper V3 is a powerful, modern Sol's RNG based app specifically designed to
 
 ```bash
 # Clone the repository
-git clone https://github.com/vexthecoder/sniper-v3.git
+git clone https://github.com/vexsyx/sniper-v3.git
 cd sniper-v3
 
 # Install dependencies
@@ -136,7 +136,7 @@ Our standalone Windows executable provides the ultimate convenience:
 - ✅ Portable and easy to share
 
 **⬇️ Download:**
-- Grab the latest `Sol Sniper V3.exe` from our [Releases](https://github.com/vexthecoder/sniper-v3/releases)
+- Grab the latest `Sol Sniper V3.exe` from our [Releases](https://github.com/vexsyx/sniper-v3/releases)
 
 **🚀 Usage:**
 1. Download `Sol Sniper V3.exe`
@@ -273,7 +273,7 @@ For Roblox `.ROBLOSECURITY` cookie extraction, follow our video tutorial:
 
 ### 📞 Getting Help
 
-1. **Check** [Issues](https://github.com/vexthecoder/sniper-v3/issues) page
+1. **Check** [Issues](https://github.com/vexsyx/sniper-v3/issues) page
 2. **Review** troubleshooting guide above
 3. **Join** our [Discord Community](https://discord.gg/RPcPUp47YD)
 4. **Create** detailed issue reports
@@ -352,7 +352,7 @@ We love community contributions! Here's how to get involved:
 #### 🏗️ Development Setup
 ```bash
 # Clone repository
-git clone https://github.com/vexthecoder/sniper-v3.git
+git clone https://github.com/vexsyx/sniper-v3.git
 cd sniper-v3
 
 # Create virtual environment
@@ -400,7 +400,7 @@ This project is licensed under **GNU General Public License v3.0 (GPLv3)**.
 
 | Member | Role | Contact |
 |--------|------|---------|
-| **vex** | Lead Developer & Maintainer | [GitHub](https://github.com/vexthecoder) \| [Discord](https://discord.com/users/1018875765565177976) |
+| **vex** | Lead Developer & Maintainer | [GitHub](https://github.com/vexsyx) \| [Discord](https://discord.com/users/1018875765565177976) |
 | **yeswe** | Core Contributor | [GitHub](https://github.com/the2727) \| [Discord](https://discord.com/users/463575384961581066) |
 | **PJ** | Core Contributor | [Discord](https://discord.com/users/773604524573196298) |
 
@@ -421,7 +421,7 @@ Consider supporting our developers:
 ### 📚 Resources
 - **Documentation**: This README & project wiki
 - **Community**: [Discord Server](https://discord.gg/RPcPUp47YD)
-- **Issues**: [GitHub Issues](https://github.com/vexthecoder/sniper-v3/issues)
+- **Issues**: [GitHub Issues](https://github.com/vexsyx/sniper-v3/issues)
 - **Contact**: Via Discord profiles
 
 ---
@@ -432,9 +432,9 @@ Consider supporting our developers:
 
 **Get started now with our standalone executable or Python version!**
 
-[![Download EXE](https://img.shields.io/badge/Download_EXE-2d2d2d?style=for-the-badge&logo=googleanalytics&logoColor=white)](https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/Sol%20Sniper%20V3.exe)
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-2d2d2d?style=for-the-badge&logo=github)](https://github.com/vexthecoder/sniper-v3)
-[![Discord](https://img.shields.io/badge/Discord-Join_Server-5865F2?style=for-the-badge&logo=discord)](https://discord.gg/RPcPUp47YD)
+[![Download EXE](https://img.shields.io/badge/Download_EXE-2d2d2d?style=for-the-badge&logo=googleanalytics&logoColor=white)](https://raw.githubusercontent.com/vexsyx/sniper-v3/main/Sol%20Sniper%20V3.exe)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-2d2d2d?style=for-the-badge&logo=github)](https://github.com/vexsyx/sniper-v3)
+[![Discord](https://img.shields.io/discord/1271189425459826699?style=for-the-badge&logo=discord&label=Discord&labelColor=5865F2)](https://discord.gg/RPcPUp47YD)
 
 **Made with ❤️ by the Sol Sniper Team**
 
