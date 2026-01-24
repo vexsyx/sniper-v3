@@ -826,12 +826,6 @@ def get_installed_roblox_versions():
             ]
         },
         {
-            "name": "Voidstrap", 
-            "paths": [
-                Path(os.path.expanduser("~/AppData/Local/Voidstrap/Voidstrap.exe"))
-            ]
-        },
-        {
             "name": "Fishstrap",
             "paths": [
                 Path(os.path.expanduser("~/AppData/Local/Fishstrap/Fishstrap.exe"))
@@ -861,8 +855,6 @@ def get_app_icon(exe_path):
         return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/windows_store.png"
     elif "local\\bloxstrap" in exe_path_lower or "bloxstrap" in exe_path_lower:
         return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/bloxstrap.png"
-    elif "local\\voidstrap" in exe_path_lower or "voidstrap" in exe_path_lower:
-        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/voidstrap.png"
     elif "local\\fishstrap" in exe_path_lower or "fishstrap" in exe_path_lower:
         return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/fishstrap.png"
     elif "local\\roblox" in exe_path_lower:
