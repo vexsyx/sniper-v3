@@ -35,15 +35,26 @@ import platform
 import subprocess
 import threading
 if platform.system() == "Darwin":
-    KEYBIND_SUPPORT = False
+    KEYBIND_SUPPORT = True
+    try:
+        from pynput import keyboard as pynput_keyboard
+        PYNPUT_AVAILABLE = True
+    except ImportError:
+        PYNPUT_AVAILABLE = False
+        KEYBIND_SUPPORT = False
 else:
     KEYBIND_SUPPORT = True
     import keyboard
 if platform.system() == "Windows":
     from win11toast import toast
+    import win32gui
+    import win32con
+    import winreg
 else:
     from desktop_notifier import DesktopNotifier
 from queue import Queue
+import autoit
+import shutil
 
 APP_NAME = "sol-sniper"
 BASE_DIR = Path(os.getcwd())
@@ -53,16 +64,17 @@ SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
 KEYWORDS_FILE = SETTINGS_DIR / "keywords.json"
 SERVERS_FILE = SETTINGS_DIR / "servers.json"
 CONFIG_FILE = SETTINGS_DIR / "sniper_config.ini"
+SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 DATA_FILE = SETTINGS_DIR / "currentKeyword.json"
 LOGS_DIR = SETTINGS_DIR / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 ASSETS = {
-    "snipercat.png": "https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/assets/snipercat.png",
-    "yeswe.png": "https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/assets/yeswe.png",
-    "pajamas.png": "https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/assets/pajamas.png",
-    "font.ttf": "https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/assets/font.ttf",
-    "vex.png": "https://raw.githubusercontent.com/vexthecoder/sniper-v3/main/assets/vex.png"
+    "snipercat.png": "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/snipercat.png",
+    "yeswe.png": "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/yeswe.png",
+    "pajamas.png": "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/pajamas.png",
+    "font.ttf": "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/font.ttf",
+    "vex.png": "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/vex.png"
 }
 
 DISCORD_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" fill="#fff" viewBox="0 0 16 16">
@@ -91,28 +103,63 @@ EDIT_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fi
   <path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/>
   <path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z"/>
 </svg>"""
+EYE_OPEN_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#fff" class="bi bi-eye-fill" viewBox="0 0 16 16">
+  <path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0"/>
+  <path d="M0 8s3-5.5 8-5.5S16 8 16 8s-3 5.5-8 5.5S0 8 0 8m8 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"/>
+</svg>"""
+EYE_CLOSED_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#fff" class="bi bi-eye-slash-fill" viewBox="0 0 16 16">
+  <path d="m10.79 12.912-1.614-1.615a3.5 3.5 0 0 1-4.474-4.474l-2.06-2.06C.938 6.278 0 8 0 8s3 5.5 8 5.5a7 7 0 0 0 2.79-.588M5.21 3.088A7 7 0 0 1 8 2.5c5 0 8 5.5 8 5.5s-.939 1.721-2.641 3.238l-2.062-2.062a3.5 3.5 0 0 0-4.474-4.474z"/>
+  <path d="M5.525 7.646a2.5 2.5 0 0 0 2.829 2.829zm4.95.708-2.829-2.83a2.5 2.5 0 0 1 2.829 2.829zm3.171 6-12-12 .708-.708 12 12z"/>
+</svg>"""
 
-OYSTERDETECTOR_API_URL = "http://127.0.0.1:5005/OysterDetector"
-MAXSTELLAR_API_URL = "http://127.0.0.1:5006/maxstellar"
 
 PRIVATE_SERVER_PATTERN = re.compile(r'https://www\.roblox\.com/games/(\d+)/.+\?privateServerLinkCode=([\w-]+)')
 SHARE_CODE_PATTERN = re.compile(r'https://www\.roblox\.com/share\?code=([a-f0-9]+)&type=Server')
 DEEPLINK_PATTERN = re.compile(r'https://www\.roblox\.com/games/start\?placeId=(\d+)(?:&launchData=([^&]+))?')
-URL_PATTERN = re.compile(r'(?P<url>https?://[^\s]+)')
-GLITCHED_PATTERN = re.compile(
-    r"\bg.{0,2}l.{0,2}(?:i.{0,2}t|t.{0,2}i).{0,2}c.{0,2}h[ed]*(?=\W|$)", 
-    re.IGNORECASE
-)
-DREAM_PATTERN = re.compile(
-    r"d.{0,2}r.{0,2}e{1,3}.{0,2}a.{0,2}m.{0,4}(?:space|scape|spce|scpae|s.?p.?a.?c.?e)(?=\W|$)", 
-    re.IGNORECASE
-)
+URL_PATTERN = re.compile(r'(?:(?:https?|roblox)://[^\s<>"]+|www\.[^\s<>"]+\.[^\s<>"]+)', re.IGNORECASE)
+ROPRO_PATTERN = re.compile(r'https?://(?:www\.)?(?:ro\.pro|ropro\.io)/(?:join/)?([a-zA-Z0-9]+)')
+REDIRECT_GAME_PATTERN = re.compile(r'launchData=(\d+)/([a-f0-9\-]+)')
 
 IS_BETA_VERSION = True
 CURRENT_VERSION = "3.0.0"
-BETA_VERSION = 5
+BETA_VERSION = 6
+FULL_VERSION = f"{CURRENT_VERSION}-{BETA_VERSION}" if IS_BETA_VERSION else CURRENT_VERSION
 IS_PRE_RELEASE = False
 
+
+CONFIG_DATA = {
+    "token": "",
+    "glitchsniping": False,
+    "dreamsniping": False,
+    "cybersniping": False,
+    "jestersniping": False,
+    "voidcoinsniping": False,
+    "close_roblox_before_joining": False,
+    "leave_game_before_joining": False,
+    "minimize_other_windows": False,
+    "auto_pause_sniper": True,
+    "only_join_sols_links": True,
+    "snipe_ropro_links": True,
+    "pause_duration": 120,
+    "override_protocol_enabled": False,
+    "override_protocol_path": "",
+    "override_protocol_type": "",
+    "open_roblox": "-",
+    "open_roblox_toggle": True,
+    "stop_sniper": "[",
+    "stop_sniper_toggle": True,
+    "toggle_sniper": "f4",
+    "toggle_sniper_toggle": True,
+    "loading_asset_skipper": "f5",
+    "loading_asset_skipper_toggle": False,
+    "main_menu_skipper": "f6",
+    "main_menu_skipper_toggle": False,
+    "toast_notifications": True,
+    "stillbackground": False,
+    "semi_transparent_background": False,
+    "gradient_theme": False,
+    "advanced_mode": False
+}
 
 config = configparser.ConfigParser()
 url_pattern = re.compile(r'https?://[^\s]+')
@@ -122,42 +169,51 @@ timer_running = False
 sniper_active = False
 sniper_paused = False
 pause_end_time = None
+loading_asset_skipper_active = False
+main_menu_skipper_active = False
 
-open_roblox_toggle = True
-stop_sniper_toggle = True
-toggle_sniper_toggle = True
-open_roblox_key = '-'
-stop_sniper_key = '['
-toggle_sniper_key = "F4"
-pause_duration = 120
-glitchsniping = False
-dreamsniping = False
-jestersniping = False
-voidcoinsniping = False
-toast_notifications = True
-advanced_mode = False
-close_roblox_before_joining = False
-leave_if_wrong_biome = True
-minimize_other_windows = False
-launch_protocol = "roblox://"
-token = ""
-roblox_cookie = ""
 blockedUsers = []
-stillbackground = False
-gradient_theme = False
-semi_transparent_background = False
 processing_hotkey_assignment = False
 
 executor = ThreadPoolExecutor(max_workers=4)
 config_lock = Lock()
 
 log_filename = datetime.now().strftime("%m-%d-%Y %H-%M-%S.log")
+
+class LogSignalEmitter(QThread):
+    log_signal = pyqtSignal(str, str, str)
+    
+    def __init__(self):
+        super().__init__()
+        self.queue = Queue()
+    
+    def run(self):
+        while True:
+            try:
+                timestamp, level, message = self.queue.get(timeout=0.1)
+                self.log_signal.emit(timestamp, level, message)
+            except:
+                pass
+
+log_emitter = LogSignalEmitter()
+
+class GUILoggingHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
+            level = record.levelname
+            message = record.getMessage()
+            log_emitter.queue.put((timestamp, level, message))
+        except Exception:
+            self.handleError(record)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(str(LOGS_DIR / log_filename), encoding="utf-8"),
-        logging.StreamHandler()
+        logging.StreamHandler(),
+        GUILoggingHandler()
     ]
 )
 
@@ -183,7 +239,7 @@ def download_assets():
             self.setMask(region)
             
         def setup_ui(self):
-            if stillbackground:
+            if CONFIG_DATA["stillbackground"]:
                 self.bg_widget = StarryBackgroundStill(self)
             else:
                 self.bg_widget = StarryBackground(self)
@@ -243,7 +299,7 @@ def download_assets():
             
             self.cancel_btn = QPushButton("Cancel")
             self.cancel_btn.setFixedHeight(35)
-            if gradient_theme:
+            if CONFIG_DATA["gradient_theme"]:
                 self.cancel_btn.setStyleSheet("""
                     QPushButton {
                         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -301,7 +357,7 @@ def download_assets():
             error_dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint)
             error_dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             
-            if stillbackground:
+            if CONFIG_DATA["stillbackground"]:
                 bg_widget = StarryBackgroundStill(error_dialog)
             else:
                 bg_widget = StarryBackground(error_dialog)
@@ -346,7 +402,7 @@ def download_assets():
             
             retry_btn = QPushButton("Redownload Failed Assets")
             retry_btn.setFixedHeight(35)
-            if gradient_theme:
+            if CONFIG_DATA["gradient_theme"]:
                 retry_btn.setStyleSheet("""
                     QPushButton {
                         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -466,7 +522,30 @@ def download_assets():
     
     def download_task():
         completed = 0
+        font_url = ASSETS.get("font.ttf")
+        if font_url:
+            font_path = SETTINGS_DIR / "font.ttf"
+            try:
+                response = requests.get(font_url, timeout=10)
+                response.raise_for_status()
+                with open(font_path, "wb") as f:
+                    f.write(response.content)
+                font_id = QFontDatabase.addApplicationFont(str(font_path))
+                if font_id != -1:
+                    font_families = QFontDatabase.applicationFontFamilies(font_id)
+                    if font_families:
+                        QApplication.instance().setFont(QFont(font_families[0], 10))
+                download_dialog.update_progress("font.ttf", "Downloaded", 1)
+                completed = 1
+            except Exception as e:
+                logging.error(f"Failed to download font: {e}")
+                download_dialog.failed_assets.append(("font.ttf", str(e)))
+                download_dialog.update_progress("font.ttf", "Failed", 1)
+                completed = 1
+        
         for filename, url in ASSETS.items():
+            if filename == "font.ttf":
+                continue
             if download_dialog.download_canceled:
                 logging.info("Asset download canceled by user")
                 break
@@ -521,167 +600,529 @@ def download_assets():
         if not download_dialog.download_canceled:
             QTimer.singleShot(500, download_dialog.close)
     
-    download_thread = threading.Thread(target=download_task, daemon=True)
+    download_thread = threading.Thread(target=download_task, daemon=False)
     download_thread.start()
     
     download_dialog.exec()
+    download_thread.join(timeout=30)
     
     if download_dialog.download_canceled:
         logging.info("Asset download was canceled, continuing with available assets")
 
 def load_settings():
-    global token, roblox_cookie, open_roblox_toggle, stop_sniper_toggle, toggle_sniper_toggle, open_roblox_key, stop_sniper_key, toggle_sniper_key
-    global glitchsniping, dreamsniping, jestersniping, voidcoinsniping, leave_if_wrong_biome, close_roblox_before_joining, minimize_other_windows, launch_protocol, pause_duration
-    global stillbackground, toast_notifications, semi_transparent_background
-    global gradient_theme, advanced_mode
-
-    try:
-        if CONFIG_FILE.exists():
-            config.read(CONFIG_FILE)
-            token = config['sniping'].get('token', '')
-            roblox_cookie = config['sniping'].get('roblox_cookie', '')
-            glitchsniping = config['sniping'].get('glitchsniping', "False") == "True"
-            dreamsniping = config['sniping'].get('dreamsniping', "False") == "True"
-            jestersniping = config['sniping'].get('jestersniping', "False") == "True"
-            voidcoinsniping = config['sniping'].get('voidcoinsniping', "False") == "True"
-            close_roblox_before_joining = config['sniping'].get('close_roblox_before_joining', "False") == "True"
-            leave_if_wrong_biome = config['sniping'].get('leave_if_wrong_biome', "True") == "True"
-            minimize_other_windows = config['sniping'].get('minimize_other_windows', "False") == "True"
-            launch_protocol = config['sniping'].get('launch_protocol', 'roblox://')
-            pause_duration = int(config['sniping'].get('pause_duration', 120))
-            open_roblox_toggle = config['Hotkeys'].get('open_roblox_toggle', "True") == "True"
-            open_roblox_key = config["Hotkeys"].get('open_roblox', '-')
-            stop_sniper_toggle = config['Hotkeys'].get('stop_sniper_toggle', "True") == "True"
-            stop_sniper_key = config["Hotkeys"].get('stop_sniper', '[')
-            toggle_sniper_toggle = config['Hotkeys'].get('toggle_sniper_toggle', "True") == "True"
-            toggle_sniper_key = config["Hotkeys"].get('toggle_sniper', 'F4')
-            toast_notifications = config['Settings'].get('toast_notifications', "True") == "True"
-            stillbackground = config['Settings'].get('stillbackground', "False") == "True"
-            semi_transparent_background = config['Settings'].get('semi_transparent_background', "False") == "True"
-            gradient_theme = config['Settings'].get('gradient_theme', "False") == "True"
-            advanced_mode = config['Settings'].get('advanced_mode', "False") == "True"
-            
-            if KEYWORDS_FILE.exists():
-                with open(KEYWORDS_FILE, 'r') as f:
-                    keywords_data = json.load(f)
-                    custom_categories = keywords_data.get("custom_categories", [])
-                    for category in custom_categories:
-                        category_key = category.replace(" ", "_")
-                        setting_name = f"customcat_{category_key}"
-                        globals()[setting_name] = config['sniping'].get(setting_name, "False") == "True"
+    global CONFIG_DATA
+    
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                loaded_data = json.load(f)
+                CONFIG_DATA.update(loaded_data)
+            logging.info("Settings loaded from settings.json")
+        except Exception as e:
+            logging.error(f"Failed to load settings.json: {e}")
+    elif CONFIG_FILE.exists():
+        if prompt_import_legacy_settings():
+            convert_legacy_settings()
         else:
-            config['sniping'] = {
-                'glitchsniping': 'False',
-                'dreamsniping': 'False',
-                'jestersniping': 'False',
-                'voidCoinsniping': 'False',
-                'leave_if_wrong_biome': 'True',
-                'minimize_other_windows': 'False',
-                'launch_protocol': 'roblox://',
-                'close_roblox_before_joining': 'False',
-                'token': '',
-                'roblox_cookie': '',
-                'pause_duration': 120
-            }
-            config['Hotkeys'] = {
-                'open_roblox': '-',
-                'open_roblox_toggle': 'True',
-                'stop_sniper': '[',
-                'stop_sniper_toggle': 'True',
-                'toggle_sniper': 'F4',
-                'toggle_sniper_toggle': 'True'
-            }
-            config['Settings'] = {
-                'toast_notifications': 'True',
-                'stillbackground': 'False',
-                'semi_transparent_background': 'False',
-                'gradient_theme': 'False',
-                'advanced_mode': 'False'
-            }
-            config['Beta'] = {}
-            with open(CONFIG_FILE, 'w') as configfile:
-                config.write(configfile)
-    except KeyError:
-        # if category doesnt exist, create it, if it does, skip it
-        if 'sniping' not in config:
-            config['sniping'] = {
-                'glitchsniping': 'False',
-                'dreamsniping': 'False',
-                'jestersniping': 'False',
-                'voidCoinsniping': 'False',
-                'leave_if_wrong_biome': 'True',
-                'minimize_other_windows': 'False',
-                'launch_protocol': 'roblox://',
-                'close_roblox_before_joining': 'False',
-                'token': '',
-                'roblox_cookie': '',
-                'pause_duration': 120
-            }
-        if 'Hotkeys' not in config:
-            config['Hotkeys'] = {
-                'open_roblox': '-',
-                'open_roblox_toggle': 'True',
-                'stop_sniper': '[',
-                'stop_sniper_toggle': 'True',
-                'toggle_sniper': 'F4',
-                'toggle_sniper_toggle': 'True'
-            }
-        if 'Settings' not in config:
-            config['Settings'] = {
-                'toast_notifications': 'True',
-                'stillbackground': 'False',
-                'semi_transparent_background': 'False',
-                'gradient_theme': 'False',
-                'advanced_mode': 'False'
-            }
-        if 'Beta' not in config:
-            config['Beta'] = {}
-        with open(CONFIG_FILE, 'w') as configfile:
-            config.write(configfile)
-
-
-def save_settings():
-    config['sniping'] = {
-        'glitchsniping': str(glitchsniping),
-        'dreamsniping': str(dreamsniping),
-        'jestersniping': str(jestersniping),
-        'voidCoinsniping': str(voidcoinsniping),
-        'leave_if_wrong_biome': str(leave_if_wrong_biome),
-        'minimize_other_windows': str(minimize_other_windows),
-        'launch_protocol': str(launch_protocol),
-        'close_roblox_before_joining': str(close_roblox_before_joining),
-        'token': str(token),
-        'roblox_cookie': str(roblox_cookie),
-        'pause_duration': int(pause_duration)
-    }
+            save_settings()
+    else:
+        save_settings()
     
     if KEYWORDS_FILE.exists():
-        with open(KEYWORDS_FILE, 'r') as f:
-            keywords_data = json.load(f)
-            custom_categories = keywords_data.get("custom_categories", [])
-            for category in custom_categories:
-                category_key = category.replace(" ", "_")
-                setting_name = f"customcat_{category_key}"
-                config['sniping'][setting_name] = str(globals().get(setting_name, False))
+        try:
+            with open(KEYWORDS_FILE, 'r', encoding='utf-8') as f:
+                keywords_data = json.load(f)
+                custom_categories = keywords_data.get("custom_categories", [])
+                for category in custom_categories:
+                    setting_name = f"customcat_{category.replace(' ', '_')}"
+                    if setting_name not in CONFIG_DATA:
+                        CONFIG_DATA[setting_name] = False
+        except:
+            pass
     
-    config['Hotkeys'] = {
-        'open_roblox': open_roblox_key,
-        'open_roblox_toggle': str(open_roblox_toggle),
-        'stop_sniper': stop_sniper_key,
-        'stop_sniper_toggle': str(stop_sniper_toggle),
-        'toggle_sniper': toggle_sniper_key,
-        'toggle_sniper_toggle': str(toggle_sniper_toggle)
-    }
-    config['Settings'] = {
-        'toast_notifications': str(toast_notifications),
-        'stillbackground': str(stillbackground),
-        'semi_transparent_background': str(semi_transparent_background),
-        'gradient_theme': str(gradient_theme),
-        'advanced_mode': str(advanced_mode)
-    }
-    config['Beta'] = {}
-    with open(CONFIG_FILE, 'w') as configfile:
-        config.write(configfile)
+    if platform.system() != "Windows":
+        CONFIG_DATA["override_protocol_enabled"] = False
+        CONFIG_DATA["override_protocol_path"] = ""
+        CONFIG_DATA["override_protocol_type"] = ""
+
+def prompt_import_legacy_settings():
+    msg = QMessageBox()
+    msg.setWindowTitle("Import Legacy Settings")
+    msg.setText("Legacy settings file found. Would you like to import your settings from the old system?")
+    msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    msg.setIcon(QMessageBox.Icon.Question)
+    return msg.exec() == QMessageBox.StandardButton.Yes
+
+def convert_legacy_settings():
+    global CONFIG_DATA
+    try:
+        config_legacy = configparser.ConfigParser()
+        config_legacy.read(CONFIG_FILE)
+        
+        if 'sniping' in config_legacy:
+            CONFIG_DATA['token'] = config_legacy['sniping'].get('token', '')
+            CONFIG_DATA['glitchsniping'] = config_legacy['sniping'].get('glitchsniping', 'False') == 'True'
+            CONFIG_DATA['dreamsniping'] = config_legacy['sniping'].get('dreamsniping', 'False') == 'True'
+            CONFIG_DATA['cybersniping'] = config_legacy['sniping'].get('cybersniping', 'False') == 'True'
+            CONFIG_DATA['jestersniping'] = config_legacy['sniping'].get('jestersniping', 'False') == 'True'
+            CONFIG_DATA['voidcoinsniping'] = config_legacy['sniping'].get('voidCoinsniping', 'False') == 'True'
+            CONFIG_DATA['close_roblox_before_joining'] = config_legacy['sniping'].get('close_roblox_before_joining', 'False') == 'True'
+            CONFIG_DATA['leave_game_before_joining'] = config_legacy['sniping'].get('leave_game_before_joining', 'False') == 'True'
+            CONFIG_DATA['minimize_other_windows'] = config_legacy['sniping'].get('minimize_other_windows', 'False') == 'True'
+            CONFIG_DATA['auto_pause_sniper'] = config_legacy['sniping'].get('auto_pause_sniper', 'True') == 'True'
+            CONFIG_DATA['only_join_sols_links'] = config_legacy['sniping'].get('only_join_sols_links', 'True') == 'True'
+            CONFIG_DATA['snipe_ropro_links'] = config_legacy['sniping'].get('snipe_ropro_links', 'True') == 'True'
+            CONFIG_DATA['pause_duration'] = int(config_legacy['sniping'].get('pause_duration', 120))
+            
+            if platform.system() == "Windows":
+                CONFIG_DATA['override_protocol_enabled'] = config_legacy['sniping'].get('override_protocol_enabled', 'False') == 'True'
+                CONFIG_DATA['override_protocol_path'] = config_legacy['sniping'].get('override_protocol_path', '')
+                CONFIG_DATA['override_protocol_type'] = config_legacy['sniping'].get('override_protocol_type', '')
+            
+            custom_categories = []
+            for key in config_legacy['sniping']:
+                if key.startswith('customcat_'):
+                    if config_legacy['sniping'].get(key) in ['True', 'False']:
+                        category_name = key.replace('customcat_', '').replace('_', ' ')
+                        is_enabled = config_legacy['sniping'].get(key) == 'True'
+                        custom_categories.append(category_name)
+                        CONFIG_DATA[key] = is_enabled
+            
+            if custom_categories:
+                keywords_data = {"keywords": [], "custom_categories": custom_categories}
+                if KEYWORDS_FILE.exists():
+                    try:
+                        with open(KEYWORDS_FILE, 'r') as f:
+                            existing_data = json.load(f)
+                            if isinstance(existing_data, dict):
+                                keywords_data["keywords"] = existing_data.get("keywords", [])
+                                existing_cats = existing_data.get("custom_categories", [])
+                                custom_categories = list(set(custom_categories + existing_cats))
+                                keywords_data["custom_categories"] = custom_categories
+                            elif isinstance(existing_data, list):
+                                keywords_data["keywords"] = existing_data
+                    except:
+                        pass
+                
+                with open(KEYWORDS_FILE, 'w') as f:
+                    json.dump(keywords_data, f, indent=4)
+        
+        if 'Hotkeys' in config_legacy:
+            CONFIG_DATA['open_roblox_toggle'] = config_legacy['Hotkeys'].get('open_roblox_toggle', 'True') == 'True'
+            CONFIG_DATA['open_roblox'] = config_legacy['Hotkeys'].get('open_roblox', '-')
+            CONFIG_DATA['stop_sniper_toggle'] = config_legacy['Hotkeys'].get('stop_sniper_toggle', 'True') == 'True'
+            CONFIG_DATA['stop_sniper'] = config_legacy['Hotkeys'].get('stop_sniper', '[')
+            CONFIG_DATA['toggle_sniper_toggle'] = config_legacy['Hotkeys'].get('toggle_sniper_toggle', 'True') == 'True'
+            CONFIG_DATA['toggle_sniper'] = config_legacy['Hotkeys'].get('toggle_sniper', 'f4')
+            CONFIG_DATA['loading_asset_skipper_toggle'] = config_legacy['Hotkeys'].get('loading_asset_skipper_toggle', 'False') == 'True'
+            CONFIG_DATA['loading_asset_skipper'] = config_legacy['Hotkeys'].get('loading_asset_skipper', 'f5')
+            CONFIG_DATA['main_menu_skipper_toggle'] = config_legacy['Hotkeys'].get('main_menu_skipper_toggle', 'False') == 'True'
+            CONFIG_DATA['main_menu_skipper'] = config_legacy['Hotkeys'].get('main_menu_skipper', 'f6')
+        
+        if 'Settings' in config_legacy:
+            CONFIG_DATA['toast_notifications'] = config_legacy['Settings'].get('toast_notifications', 'True') == 'True'
+            CONFIG_DATA['stillbackground'] = config_legacy['Settings'].get('stillbackground', 'False') == 'True'
+            CONFIG_DATA['semi_transparent_background'] = config_legacy['Settings'].get('semi_transparent_background', 'False') == 'True'
+            CONFIG_DATA['gradient_theme'] = config_legacy['Settings'].get('gradient_theme', 'False') == 'True'
+            CONFIG_DATA['advanced_mode'] = config_legacy['Settings'].get('advanced_mode', 'False') == 'True'
+        
+        save_settings()
+        logging.info("Successfully migrated legacy settings and saved them to settings.json")
+    except Exception as e:
+        logging.error(f"Failed to convert legacy settings: {e}")
+
+def save_settings():
+    try:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(CONFIG_DATA, f, indent=4)
+        logging.info("Settings saved to settings.json")
+    except Exception as e:
+        logging.error(f"Failed to save settings: {e}")
+
+def get_config(key, default=None):
+    return CONFIG_DATA.get(key, default)
+
+def set_config(key, value):
+    CONFIG_DATA[key] = value
+    save_settings()
+
+def get_installed_roblox_versions():
+    versions = []
+    latest_version = None
+    
+    if platform.system() == 'Darwin':
+        roblox_app_path = Path(os.path.expanduser("~/Applications/Roblox.app/Contents/MacOS/Roblox"))
+        if roblox_app_path.exists():
+            versions.append({
+                "name": "Roblox (macOS)",
+                "path": str(roblox_app_path),
+                "type": "macOS",
+                "icon": str(get_app_icon(roblox_app_path))
+            })
+        
+        app_path = Path("/Applications/Roblox.app/Contents/MacOS/Roblox")
+        if app_path.exists():
+            versions.append({
+                "name": "Roblox (System)",
+                "path": str(app_path),
+                "type": "macOS",
+                "icon": str(get_app_icon(app_path))
+            })
+        
+        return versions
+    
+    if platform.system() != 'Windows':
+        return versions
+    
+    try:
+        response = requests.get("https://clientsettingscdn.roblox.com/v2/client-version/WindowsPlayer", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            client_version_upload = data.get("clientVersionUpload", "")
+            latest_version = client_version_upload
+            
+            legacy_path = Path(os.path.expanduser("~/AppData/Local/Roblox/Versions"))
+            if legacy_path.exists():
+                for version_dir in legacy_path.iterdir():
+                    if version_dir.name == client_version_upload:
+                        exe_path = version_dir / "RobloxPlayerBeta.exe"
+                        if exe_path.exists():
+                            versions.append({
+                                "name": f"Latest Web Version ({client_version_upload})",
+                                "path": str(exe_path),
+                                "type": "legacy",
+                                "icon": str(get_app_icon(exe_path))
+                            })
+                            break
+    except:
+        pass
+
+    windowsapps_path = Path(r"C:\Program Files\WindowsApps\ROBLOXCORPORATION.ROBLOX_2.698.937.0_x64__55nm5eh3cm0pr\Windows10Universal.exe")
+    if windowsapps_path.exists():
+        versions.append({
+            "name": "Microsoft Store Version",
+            "path": str(windowsapps_path),
+            "type": "store",
+            "icon": str(get_app_icon(windowsapps_path))
+        })
+    
+    legacy_path = Path(os.path.expanduser("~/AppData/Local/Roblox/Versions"))
+    if legacy_path.exists():
+        for version_dir in legacy_path.iterdir():
+            exe_path = version_dir / "RobloxPlayerBeta.exe"
+            if exe_path.exists() and exe_path not in [v["path"] for v in versions] and version_dir.name != latest_version:
+                versions.append({
+                    "name": f"Web Version ({version_dir.name})",
+                    "path": str(exe_path),
+                    "type": "legacy",
+                    "icon": str(get_app_icon(exe_path))
+                })
+    
+    bootstrappers = [
+        {
+            "name": "Bloxstrap",
+            "paths": [
+                Path(os.path.expanduser("~/AppData/Local/Bloxstrap/Bloxstrap.exe"))
+            ]
+        },
+        {
+            "name": "Voidstrap", 
+            "paths": [
+                Path(os.path.expanduser("~/AppData/Local/Voidstrap/Voidstrap.exe"))
+            ]
+        },
+        {
+            "name": "Fishstrap",
+            "paths": [
+                Path(os.path.expanduser("~/AppData/Local/Fishstrap/Fishstrap.exe"))
+            ]
+        }
+    ]
+    
+    for bootstrapper in bootstrappers:
+        for bootstrapper_path in bootstrapper["paths"]:
+            if bootstrapper_path.exists():
+                versions.append({
+                    "name": bootstrapper["name"],
+                    "path": str(bootstrapper_path),
+                    "type": "bootstrapper",
+                    "icon": str(get_app_icon(bootstrapper_path))
+                })
+                break
+    
+    return versions
+
+def get_app_icon(exe_path):
+    exe_path_lower = str(exe_path).lower()
+    
+    if "roblox.app" in exe_path_lower or "macos" in exe_path_lower:
+        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/roblox.png"
+    elif "windowsapps" in exe_path_lower:
+        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/windows_store.png"
+    elif "local\\bloxstrap" in exe_path_lower or "bloxstrap" in exe_path_lower:
+        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/bloxstrap.png"
+    elif "local\\voidstrap" in exe_path_lower or "voidstrap" in exe_path_lower:
+        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/voidstrap.png"
+    elif "local\\fishstrap" in exe_path_lower or "fishstrap" in exe_path_lower:
+        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/fishstrap.png"
+    elif "local\\roblox" in exe_path_lower:
+        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/roblox.png"
+    else:
+        return "https://raw.githubusercontent.com/vexsyx/sniper-v3/main/assets/vex.png"
+
+def override_roblox_protocol(roblox_path, roblox_type):
+    try:
+        if platform.system() == "Darwin":
+            plist_path = Path(os.path.expanduser("~/Library/Preferences/com.apple.LaunchServices.plist"))
+            logging.info(f"macOS protocol override - would register {roblox_path}")
+            return True
+        
+        key_path = r"SOFTWARE\Classes\roblox"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, "URL: Roblox Protocol")
+        
+        icon_key_path = rf"{key_path}\DefaultIcon"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, icon_key_path) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, roblox_path)
+        
+        command_key_path = rf"{key_path}\shell\open\command"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, command_key_path) as key:
+            if roblox_type == "bootstrapper":
+                cmd = f'"{roblox_path}" -player "%1"'
+            else:
+                cmd = f'"{roblox_path}" "%1"'
+            
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, cmd)
+        
+        return True
+    except Exception as e:
+        logging.error(f"Failed to override ROBLOX protocol: {e}")
+        return False
+
+def is_roblox_protocol_overridden():
+    try:
+        if platform.system() == "Darwin":
+            return False
+        
+        key_path = r"SOFTWARE\Classes\roblox\shell\open\command"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            value, _ = winreg.QueryValueEx(key, "")
+            return True
+    except Exception:
+        return False
+
+def get_roblox_protocol_target():
+    try:
+        if platform.system() == "Darwin":
+            return None
+        
+        key_path = r"SOFTWARE\Classes\roblox\shell\open\command"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            value, _ = winreg.QueryValueEx(key, "")
+            return value
+    except Exception:
+        return None
+
+def restore_roblox_protocol():
+    try:
+        if platform.system() == "Darwin":
+            return True
+        
+        key_path = r"SOFTWARE\Classes\roblox"
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, rf"{key_path}\shell\open\command")
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, rf"{key_path}\shell\open")
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, rf"{key_path}\shell")
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, rf"{key_path}\DefaultIcon")
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        
+        return True
+    except Exception as e:
+        logging.error(f"Failed to restore ROBLOX protocol: {e}")
+        return False
+
+class RobloxVersionDialog(QDialog):
+    def __init__(self, parent=None, allow_custom=False):
+        super().__init__(parent)
+        self.setWindowTitle("Select Roblox Version")
+        self.setFixedSize(550, 400)
+        self.selected_version = None
+        self.allow_custom = allow_custom
+        
+        layout = QVBoxLayout(self)
+        
+        title = QLabel("Select Roblox Version for Protocol Override")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #e0e0e0; margin-bottom: 10px;")
+        layout.addWidget(title)
+        
+        self.list_widget = QListWidget()
+        self.list_widget.setStyleSheet("""
+            QListWidget {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+                border: 1px solid #444;
+                border-radius: 6px;
+            }
+            QListWidget::item {
+                padding: 10px;
+                border-bottom: 1px solid #3a3a3a;
+            }
+            QListWidget::item:selected {
+                background-color: #4a7bff;
+                color: white;
+            }
+        """)
+        layout.addWidget(self.list_widget)
+        
+        self.no_versions_label = QLabel("No supported Roblox versions found.\n\nYou can:\n1. Specify an executable manually\n2. Download the official Roblox app from ")
+        self.no_versions_label.setStyleSheet("font-size: 14px; color: #ff5555; padding: 20px; text-align: center;")
+        self.no_versions_label.setWordWrap(True)
+        self.no_versions_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.no_versions_label.hide()
+        layout.addWidget(self.no_versions_label)
+        
+        self.download_link = ClickableLabel("https://roblox.com/download", "https://roblox.com/download")
+        self.download_link.setStyleSheet("font-size: 14px; color: #4a7bff; text-decoration: underline;")
+        self.download_link.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.download_link.hide()
+        layout.addWidget(self.download_link)
+        
+        if self.allow_custom:
+            self.custom_btn = QPushButton("Browse Custom Executable...")
+            self.custom_btn.setFixedHeight(35)
+            self.custom_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #8a4caf;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #9a5cbf;
+                }
+            """)
+            self.custom_btn.clicked.connect(self.browse_custom_executable)
+            layout.addWidget(self.custom_btn)
+        
+        button_layout = QHBoxLayout()
+        self.assign_btn = QPushButton("Select")
+        self.assign_btn.setFixedHeight(35)
+        self.assign_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a7bff;
+                color: white;
+                font-weight: 500;
+                font-size: 14px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #5a8bff;
+            }
+            QPushButton:disabled {
+                background-color: #3a5baf;
+            }
+        """)
+        self.assign_btn.clicked.connect(self.accept)
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedHeight(35)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff5555;
+                color: white;
+                font-weight: 500;
+                font-size: 14px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #ff6666;
+            }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        
+        button_layout.addWidget(self.assign_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        self.load_roblox_versions()
+    
+    def load_roblox_versions(self):
+        versions = get_installed_roblox_versions()
+        
+        if not versions:
+            self.list_widget.hide()
+            self.no_versions_label.show()
+            self.download_link.show()
+            if hasattr(self, 'custom_btn'):
+                self.custom_btn.setEnabled(True)
+            self.assign_btn.setEnabled(False)
+        else:
+            self.no_versions_label.hide()
+            self.download_link.hide()
+            self.list_widget.show()
+            
+            for version in versions:
+                item = QListWidgetItem(" " + version["name"])
+                item.setData(Qt.ItemDataRole.UserRole, version)
+                
+                try:
+                    icon_source = version["icon"]
+                    response = requests.get(icon_source, timeout=5)
+                    if response.status_code == 200:
+                        pixmap = QPixmap()
+                        pixmap.loadFromData(response.content)
+                        icon = QIcon(pixmap)
+                        item.setIcon(icon)
+                except Exception as e:
+                    logging.warning(f"Failed to load icon for {version['name']}: {e}")
+                
+                self.list_widget.addItem(item)
+            
+            self.list_widget.setCurrentRow(0)
+            self.assign_btn.setEnabled(True)
+            if hasattr(self, 'custom_btn'):
+                self.custom_btn.setEnabled(True)
+    
+    def browse_custom_executable(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Roblox Executable",
+            "",
+            "Executable Files (*.exe);;All Files (*)"
+        )
+        
+        if file_path and Path(file_path).exists():
+            custom_version = {
+                "name": f"Custom: {Path(file_path).name}",
+                "path": file_path,
+                "type": "custom",
+                "icon": file_path
+            }
+            
+            item = QListWidgetItem(custom_version["name"])
+            item.setData(Qt.ItemDataRole.UserRole, custom_version)
+            
+            try:
+                icon = QIcon(file_path)
+                item.setIcon(icon)
+            except:
+                pass
+            
+            if self.list_widget.isHidden():
+                self.list_widget.show()
+                self.no_versions_label.hide()
+                self.download_link.hide()
+            
+            self.list_widget.addItem(item)
+            self.list_widget.setCurrentRow(self.list_widget.count() - 1)
+            self.assign_btn.setEnabled(True)
+    
+    def get_selected_version(self):
+        items = self.list_widget.selectedItems()
+        if items:
+            return items[0].data(Qt.ItemDataRole.UserRole)
+        return None
 
 class SnakeGame(QDialog):
     def __init__(self, parent=None):
@@ -1084,7 +1525,7 @@ class StarryBackground(QWidget):
             
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        alpha = int(0.7 * 255) if semi_transparent_background == True else 255
+        alpha = int(0.7 * 255) if CONFIG_DATA["semi_transparent_background"] == True else 255
         painter.fillRect(self.rect(), QColor(0, 0, 0, alpha))
         painter.setPen(Qt.PenStyle.NoPen)
 
@@ -1350,7 +1791,12 @@ class KeywordDialog(QDialog):
         if KEYWORDS_FILE.exists():
             try:
                 with open(KEYWORDS_FILE, "r", encoding="utf-8") as f:
-                    keywords = json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        keywords = data
+                    else:
+                        keywords = data.get("keywords", [])
+                    
                     for kw in keywords:
                         item = QTreeWidgetItem(self.tree)
                         item.setText(0, kw['name'])
@@ -1359,7 +1805,7 @@ class KeywordDialog(QDialog):
                 pass
         else:
             with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
-                json.dump([], f)
+                json.dump({"keywords": [], "custom_categories": []}, f)
 
     def add_keyword_list(self):
         item = QTreeWidgetItem(self.tree)
@@ -1375,15 +1821,35 @@ class KeywordDialog(QDialog):
     
     def save_keywords(self):
         keywords = []
+        custom_categories = []
         for i in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(i)
+            keyword_name = item.text(0)
             keywords.append({
-                "name": item.text(0),
+                "name": keyword_name,
                 "ids": []
             })
+            if keyword_name not in ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]:
+                custom_categories.append(keyword_name)
+        
+        existing_data = {}
+        if KEYWORDS_FILE.exists():
+            try:
+                with open(KEYWORDS_FILE, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                    if isinstance(existing_data, dict) and "custom_categories" in existing_data:
+                        existing_cats = existing_data.get("custom_categories", [])
+                        custom_categories = list(set(custom_categories + existing_cats))
+            except:
+                pass
+        
+        data_to_save = {
+            "keywords": keywords,
+            "custom_categories": custom_categories
+        }
         
         with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
-            json.dump(keywords, f, indent=4)
+            json.dump(data_to_save, f, indent=4)
         self.accept()
 
 class HeaderWithPlus(QHeaderView):
@@ -1439,6 +1905,417 @@ class AddKeywordDialog(QDialog):
     def get_keyword(self):
         return self.input.text().strip()
 
+class ClickableLabel(QLabel):
+    def __init__(self, text, url, parent=None):
+        super().__init__(text, parent)
+        self.url = url
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            webbrowser.open(self.url)
+        super().mousePressEvent(event)
+
+class UpdateAvailableDialog(QDialog):
+    def __init__(self, parent=None, latest_version="", current_version="", forced=False):
+        super().__init__(parent)
+        self.latest_version = latest_version
+        self.current_version = current_version
+        self.forced = forced
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("Update Available")
+        self.setFixedSize(400, 200)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        title_bar = ModernTitleBar(self)
+        title_bar.title.setText("Update Available")
+        layout.addWidget(title_bar)
+
+        content_frame = GradientFrame()
+        content_frame.setStyleSheet("border-radius: 12px;")
+        content_layout = QVBoxLayout(content_frame)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(15)
+
+        message = QLabel(f"A new version ({self.latest_version}) is available.\nCurrent version: {self.current_version}.\nDo you want to install it now?")
+        message.setStyleSheet("font-size: 14px; color: #e0e0e0;")
+        message.setWordWrap(True)
+        content_layout.addWidget(message)
+
+        button_layout = QHBoxLayout()
+        
+        install_btn = QPushButton("Install Update")
+        install_btn.setFixedHeight(35)
+        if CONFIG_DATA["gradient_theme"]:
+            install_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4a7bff, stop:1 #8a4caf);
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #5a8bff, stop:1 #9a5cbf);
+                }
+            """)
+        else:
+            install_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a7bff;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #5a8bff;
+                }
+            """)
+        install_btn.clicked.connect(self.accept)
+
+        if not self.forced:
+            later_btn = QPushButton("Later")
+            later_btn.setFixedHeight(35)
+            later_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #ff5555;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #ff6666;
+                }
+            """)
+            later_btn.clicked.connect(self.reject)
+            button_layout.addWidget(later_btn)
+
+        button_layout.addWidget(install_btn)
+        content_layout.addLayout(button_layout)
+
+        layout.addWidget(content_frame)
+
+class RequiredUpdateDialog(QDialog):
+    def __init__(self, parent=None, latest_version="", reason=""):
+        super().__init__(parent)
+        self.latest_version = latest_version
+        self.reason = reason
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("Required Update")
+        self.setFixedSize(450, 250)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        title_bar = ModernTitleBar(self)
+        title_bar.title.setText("Required Update")
+        layout.addWidget(title_bar)
+
+        content_frame = GradientFrame()
+        content_frame.setStyleSheet("border-radius: 12px;")
+        content_layout = QVBoxLayout(content_frame)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(15)
+
+        message = QLabel(f"A required update is available ({self.latest_version}).\n\nReason: {self.reason}\n\nYou must update to continue using Sol Sniper.")
+        message.setStyleSheet("font-size: 14px; color: #e0e0e0;")
+        message.setWordWrap(True)
+        content_layout.addWidget(message)
+
+        button_layout = QHBoxLayout()
+        
+        update_btn = QPushButton("Update Now")
+        update_btn.setFixedHeight(35)
+        if CONFIG_DATA["gradient_theme"]:
+            update_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4a7bff, stop:1 #8a4caf);
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #5a8bff, stop:1 #9a5cbf);
+                }
+            """)
+        else:
+            update_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a7bff;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #5a8bff;
+                }
+            """)
+        update_btn.clicked.connect(self.accept)
+
+        quit_btn = QPushButton("Quit")
+        quit_btn.setFixedHeight(35)
+        quit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff5555;
+                color: white;
+                font-weight: 500;
+                font-size: 14px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #ff6666;
+            }
+        """)
+        quit_btn.clicked.connect(self.reject)
+
+        button_layout.addWidget(quit_btn)
+        button_layout.addWidget(update_btn)
+        content_layout.addLayout(button_layout)
+
+        layout.addWidget(content_frame)
+
+class DownloadProgressDialog(QDialog):
+    progress_updated = pyqtSignal(int, float)
+    download_finished = pyqtSignal(str)
+    download_failed = pyqtSignal(str)
+
+    def __init__(self, parent=None, forced=False):
+        super().__init__(parent)
+        self.forced = forced
+        self.download_canceled = False
+        self.setup_ui()
+        self.progress_updated.connect(self.update_progress)
+
+    def setup_ui(self):
+        self.setWindowTitle("Downloading Update")
+        self.setFixedSize(400, 180)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        title_bar = ModernTitleBar(self)
+        title_bar.title.setText("Downloading Update")
+        layout.addWidget(title_bar)
+
+        content_frame = GradientFrame()
+        content_frame.setStyleSheet("border-radius: 12px;")
+        content_layout = QVBoxLayout(content_frame)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(15)
+
+        self.message_label = QLabel("Downloading the latest version. Please wait...")
+        self.message_label.setStyleSheet("font-size: 14px; color: #e0e0e0;")
+        self.message_label.setWordWrap(True)
+        content_layout.addWidget(self.message_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #2d2d2d;
+                border: 1px solid #444;
+                border-radius: 6px;
+                text-align: center;
+                color: white;
+                height: 24px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4a7bff, stop:1 #8a4caf);
+                border-radius: 5px;
+            }
+        """)
+        content_layout.addWidget(self.progress_bar)
+
+        self.percent_label = QLabel("0.00%")
+        self.percent_label.setStyleSheet("font-size: 12px; color: #e0e0e0;")
+        self.percent_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        content_layout.addWidget(self.percent_label)
+
+        if not self.forced:
+            self.cancel_btn = QPushButton("Cancel")
+            self.cancel_btn.setFixedHeight(35)
+            self.cancel_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #ff5555;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #ff6666;
+                }
+            """)
+            self.cancel_btn.clicked.connect(self.cancel_download)
+            content_layout.addWidget(self.cancel_btn)
+
+        layout.addWidget(content_frame)
+
+    def update_progress(self, percent_int, percent_float):
+        self.progress_bar.setValue(percent_int)
+        self.percent_label.setText(f"{percent_float:.2f}%")
+
+    def cancel_download(self):
+        self.download_canceled = True
+        self.reject()
+
+class UpdateCompleteDialog(QDialog):
+    def __init__(self, parent=None, save_path=""):
+        super().__init__(parent)
+        self.save_path = save_path
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("Update Complete")
+        self.setFixedSize(400, 180)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        title_bar = ModernTitleBar(self)
+        title_bar.title.setText("Update Complete")
+        layout.addWidget(title_bar)
+
+        content_frame = GradientFrame()
+        content_frame.setStyleSheet("border-radius: 12px;")
+        content_layout = QVBoxLayout(content_frame)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(15)
+
+        message = QLabel("The new version has been installed.\nLaunch new version?")
+        message.setStyleSheet("font-size: 14px; color: #e0e0e0;")
+        message.setWordWrap(True)
+        content_layout.addWidget(message)
+
+        button_layout = QHBoxLayout()
+        
+        launch_btn = QPushButton("Launch")
+        launch_btn.setFixedHeight(35)
+        if CONFIG_DATA["gradient_theme"]:
+            launch_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4a7bff, stop:1 #8a4caf);
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #5a8bff, stop:1 #9a5cbf);
+                }
+            """)
+        else:
+            launch_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a7bff;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 14px;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #5a8bff;
+                }
+            """)
+        launch_btn.clicked.connect(self.accept)
+
+        quit_btn = QPushButton("Quit")
+        quit_btn.setFixedHeight(35)
+        quit_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff5555;
+                color: white;
+                font-weight: 500;
+                font-size: 14px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #ff6666;
+            }
+        """)
+        quit_btn.clicked.connect(self.reject)
+
+        button_layout.addWidget(quit_btn)
+        button_layout.addWidget(launch_btn)
+        content_layout.addLayout(button_layout)
+
+        layout.addWidget(content_frame)
+
+class DownloadThread(QThread):
+    progress_updated = pyqtSignal(int, float)
+    download_finished = pyqtSignal(str)
+    download_failed = pyqtSignal(str)
+
+    def __init__(self, download_url, save_path, progress_dialog):
+        super().__init__()
+        self.download_url = download_url
+        self.save_path = save_path
+        self.progress_dialog = progress_dialog
+
+    def run(self):
+        try:
+            with requests.get(self.download_url, stream=True, timeout=30) as r:
+                r.raise_for_status()
+                total_size = int(r.headers.get('content-length', 0))
+                downloaded = 0
+                
+                with open(self.save_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if self.progress_dialog.download_canceled:
+                            self._cleanup_file()
+                            self.download_failed.emit("Download canceled by user")
+                            return
+                            
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            
+                            if total_size > 0:
+                                percent = 100 * downloaded / total_size
+                                self.progress_updated.emit(int(percent), percent)
+                
+                self.download_finished.emit(self.save_path)
+                
+        except Exception as e:
+            self._cleanup_file()
+            self.download_failed.emit(str(e))
+
+    def _cleanup_file(self):
+        if os.path.exists(self.save_path):
+            try:
+                os.remove(self.save_path)
+            except:
+                pass
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1453,6 +2330,7 @@ class MainWindow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._current_toast_thread = None
         self._toast_cancel_flag = False
+        self.custom_category_checkboxes = {}
 
         if platform.system() == 'Darwin':
             self.setAttribute(Qt.WidgetAttribute.WA_MacShowFocusRect, False)
@@ -1464,18 +2342,17 @@ class MainWindow(QMainWindow):
             "keywords": {
                 "Glitched": [
                     "glitch",
-                    "glig",
-                    "404",
-                    "4o4"
+                    "glig"
                 ],
                 "Dreamspace": [
-                    "dream",
-                    "scape",
-                    "space"
+                    "dream"
+                ],
+                "Cyberspace": [
+                    "cyber"
                 ],
                 "Jester": [
                     "jest",
-                    "obl",
+                    "obli",
                     "obi"
                 ],
                 "Void Coin": [
@@ -1497,6 +2374,7 @@ class MainWindow(QMainWindow):
                 ],
                 "Glitched": [],
                 "Dreamspace": [],
+                "Cyberspace": [],
                 "Jester": [],
                 "Void Coin": []
             }
@@ -1521,9 +2399,6 @@ class MainWindow(QMainWindow):
                 ]
             }
         ]
-        load_settings()
-        global gradient_theme_persist
-        gradient_theme_persist = gradient_theme
         
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -1533,9 +2408,9 @@ class MainWindow(QMainWindow):
             }
         """)
         
-        if stillbackground == False:
+        if CONFIG_DATA["stillbackground"] == False:
             self.bg_widget = StarryBackground(self.central_widget)
-        elif stillbackground == True:
+        elif CONFIG_DATA["stillbackground"] == True:
             self.bg_widget = StarryBackgroundStill(self.central_widget)
         self.bg_widget.setGeometry(0, 0, self.width(), self.height())
 
@@ -1585,9 +2460,10 @@ class MainWindow(QMainWindow):
         self.settings_btn = self.create_sidebar_btn("Miscellaneous")
         if IS_BETA_VERSION:
             self.beta_btn = self.create_sidebar_btn("Beta Features")
+        self.logs_btn = self.create_sidebar_btn("Logs")
         self.credits_btn = self.create_sidebar_btn("Credits")
         self.discord_btn = self.create_sidebar_btn("Discord", svg=DISCORD_SVG, color="#5865F2", url="https://discord.gg/RPcPUp47YD")
-        self.github_btn = self.create_sidebar_btn("GitHub", svg=GITHUB_SVG, color="#333", url="https://github.com/vexthecoder/sniper-v3")
+        self.github_btn = self.create_sidebar_btn("GitHub", svg=GITHUB_SVG, color="#333", url="https://github.com/vexsyx/sniper-v3")
 
         sidebar_layout.addWidget(self.sniper_btn)
         sidebar_layout.addWidget(self.hotkeys_btn)
@@ -1596,6 +2472,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self.settings_btn)
         if IS_BETA_VERSION:
             sidebar_layout.addWidget(self.beta_btn)
+        sidebar_layout.addWidget(self.logs_btn)
         sidebar_layout.addWidget(self.credits_btn)
         sidebar_layout.addStretch()
         sidebar_layout.addWidget(self.discord_btn)
@@ -1619,6 +2496,7 @@ class MainWindow(QMainWindow):
         self.servers_tab = self.create_servers_tab()
         self.settings_tab = self.create_settings_tab()
         self.beta_tab = self.create_beta_tab()
+        self.logs_tab = self.create_logs_tab()
         self.credits_tab = self.create_credits_tab()
         
         self.tab_widget.addTab(self.sniper_tab, "Sniper")
@@ -1628,6 +2506,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.settings_tab, "Miscellaneous")
         if IS_BETA_VERSION:
             self.tab_widget.addTab(self.beta_tab, "Beta Features")
+        self.tab_widget.addTab(self.logs_tab, "Logs")
         self.tab_widget.addTab(self.credits_tab, "Credits")
 
         content_layout.addWidget(self.sidebar)
@@ -1637,10 +2516,13 @@ class MainWindow(QMainWindow):
         self.setup_connections()
         self.setStyleSheet(self.get_stylesheet())
         self.load_keywords_data()
+        self.refresh_custom_categories()
 
         self.is_processing = False
+        self.pause_timer = QTimer(self)
+        self.pause_timer.timeout.connect(self.check_pause_status)
+        self.pause_timer.start(1000)
         self.hotkey_monitor_running = False
-        self.csrf_token = None
         if not hasattr(self, 'hotkey_thread') or not self.hotkey_thread:
             self.hotkey_monitor_running = True
             self.hotkey_thread = threading.Thread(
@@ -1649,6 +2531,171 @@ class MainWindow(QMainWindow):
             )
             self.hotkey_thread.start()
         logging.info("MainWindow initialized")
+
+        self.check_for_updates()
+
+    def check_for_updates(self):
+        try:
+            logging.info(f"Current Version: {CURRENT_VERSION}")
+            beta_version_text = f" [BETA {BETA_VERSION}]" if IS_BETA_VERSION else ""
+            pre_release_text = " [PRE-RELEASE]" if IS_PRE_RELEASE else ""
+            logging.info(f"Current Version String: {CURRENT_VERSION}{beta_version_text}{pre_release_text}")
+            logging.info("Checking for updates...")
+            response = requests.get(
+                "https://api.github.com/repos/vexsyx/sniper-v3/releases/latest",
+                timeout=5,
+            )
+            response.raise_for_status()
+            data = response.json()
+            latest_version = data.get("tag_name", "")
+            release_body = data.get("body", "")
+            
+            logging.info(f"Latest version found: {latest_version}")
+            
+            if release_body.startswith("<!-- <REQUIRED_UPDATE>") and latest_version and self._is_newer_version(latest_version, f"{CURRENT_VERSION}"):
+                reason_start = release_body.find("(")
+                reason_end = release_body.find(")", reason_start)
+                if reason_start != -1 and reason_end != -1:
+                    reason = release_body[reason_start + 1:reason_end]
+                    self._show_required_update_dialog(latest_version, reason)
+                    return "required_update"
+            
+            if latest_version and self._is_newer_version(latest_version, f"{CURRENT_VERSION}"):
+                self._show_update_dialog(latest_version)
+                return "update_available"
+            
+            logging.info("No updates available")
+            return "no_update"
+            
+        except Exception as e:
+            logging.error(f"Failed to check for updates: {str(e)}")
+            return "no_update"
+
+    def _is_newer_version(self, latest: str, current: str) -> bool:
+        def parse_version(v: str):
+            parts = re.split(r"[.\-]", v.lstrip("v"))
+            return [int(p) for p in parts]
+
+        try:
+            latest_parts = parse_version(latest)
+            current_parts = parse_version(current)
+
+            length_diff = len(latest_parts) - len(current_parts)
+            if length_diff > 0:
+                current_parts.extend([0] * length_diff)
+            elif length_diff < 0:
+                latest_parts.extend([0] * -length_diff)
+
+            return latest_parts > current_parts
+        except Exception as e:
+            logging.error(f"Version comparison error: {str(e)}")
+            return False
+
+    def _show_required_update_dialog(self, latest_version, reason):
+        dialog = RequiredUpdateDialog(self, latest_version, reason)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._install_update(latest_version, forced=True)
+        else:
+            QApplication.quit()
+
+    def _show_update_dialog(self, latest_version):
+        dialog = UpdateAvailableDialog(self, latest_version, CURRENT_VERSION)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._install_update(latest_version)
+
+    def _install_update(self, latest_version, forced=False):
+        def get_download_url():
+            try:
+                api_url = "https://api.github.com/repos/vexsyx/sniper-v3/releases/latest"
+                resp = requests.get(api_url, timeout=10)
+                resp.raise_for_status()
+                release = resp.json()
+                
+                for asset in release.get("assets", []):
+                    if asset["name"].endswith(".exe"):
+                        return asset["browser_download_url"]
+                return None
+            except Exception as e:
+                logging.error(f"Failed to get download URL: {e}")
+                return None
+
+        def choose_save_path():
+            default_name = f"Sol Sniper {latest_version}.exe"
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Install Sol Sniper Update",
+                default_name,
+                "Executable (*.exe)"
+            )
+            return save_path
+
+        download_url = get_download_url()
+        if not download_url:
+            self._show_error_dialog("Update Error", "No installer found in the latest release.", forced)
+            return
+
+        save_path = choose_save_path()
+        if not save_path:
+            if forced:
+                self._show_error_dialog("Update Required", "You must update to continue using Sol Sniper.", forced, retry=True)
+            return
+
+        self._start_download(download_url, save_path, latest_version, forced)
+
+    def _start_download(self, download_url, save_path, latest_version, forced):
+        progress_dialog = DownloadProgressDialog(self, forced)
+        
+        download_thread = DownloadThread(download_url, save_path, progress_dialog)
+        download_thread.progress_updated.connect(progress_dialog.progress_updated.emit)
+        download_thread.download_finished.connect(lambda path: self._on_download_finished(path, progress_dialog))
+        download_thread.download_failed.connect(lambda error: self._on_download_failed(error, progress_dialog, latest_version, forced))
+        
+        download_thread.start()
+        progress_dialog.exec()
+
+    def _on_download_finished(self, save_path, progress_dialog):
+        progress_dialog.accept()
+        complete_dialog = UpdateCompleteDialog(self, save_path)
+        if complete_dialog.exec() == QDialog.DialogCode.Accepted:
+            self._launch_new_version(save_path)
+        else:
+            QApplication.quit()
+
+    def _on_download_failed(self, error, progress_dialog, latest_version, forced):
+        progress_dialog.reject()
+        if "canceled" in error.lower():
+            if forced:
+                self._show_error_dialog("Update Required", "You must update to continue using Sol Sniper.", forced, retry=True)
+        else:
+            self._show_error_dialog("Download Failed", f"Failed to download update: {error}", forced, retry=True)
+
+    def _launch_new_version(self, save_path):
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(save_path)
+            else:
+                subprocess.Popen([save_path])
+            QApplication.quit()
+        except Exception as e:
+            self._show_error_dialog("Launch Error", f"Could not launch new version: {e}\n\nPlease manually launch: {save_path}", False)
+
+    def _show_error_dialog(self, title, message, forced, retry=False):
+        msg = QMessageBox(self)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        
+        if retry and forced:
+            retry_btn = msg.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
+            quit_btn = msg.addButton("Quit", QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
+            if msg.clickedButton() == retry_btn:
+                self._install_update("latest", forced=True)
+            else:
+                QApplication.quit()
+        else:
+            msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
+            msg.exec()
 
     def open_snake_game(self):
         try:
@@ -1670,14 +2717,14 @@ class MainWindow(QMainWindow):
             new_pos = self.initial_window_pos + delta
             self.move(new_pos)
 
-            if hasattr(self, 'bg_widget') and stillbackground == False:
+            if hasattr(self, 'bg_widget') and CONFIG_DATA["stillbackground"] == False:
                 self.bg_widget.update_star_positions()
                 
             event.accept()
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        if hasattr(self, 'bg_widget') and stillbackground == False:
+        if hasattr(self, 'bg_widget') and CONFIG_DATA["stillbackground"] == False:
             self.bg_widget.update_star_positions()
 
     def closeEvent(self, event):
@@ -1701,24 +2748,106 @@ class MainWindow(QMainWindow):
         logging.info("Cleanup completed")
 
     def handle_hotkeys(self):
-        if KEYBIND_SUPPORT == False:
+        if not KEYBIND_SUPPORT:
             return
         if processing_hotkey_assignment:
             return
-        if open_roblox_toggle and keyboard.is_pressed(open_roblox_key):
-            logging.info(f"Hotkey pressed: open_roblox_key={open_roblox_key}")
-            self.launch_game(f"{launch_protocol}placeID=15532962292")
-            time.sleep(0.5)
+        
+        if platform.system() == "Darwin":
+            if not PYNPUT_AVAILABLE:
+                return
+        
+        if platform.system() == "Darwin":
+            pass
+        else:
+            if CONFIG_DATA["open_roblox_toggle"] and keyboard.is_pressed(CONFIG_DATA["open_roblox"]):
+                logging.info(f"Hotkey pressed: open_roblox_key={CONFIG_DATA['open_roblox']}")
+                self.launch_game(f"roblox://placeID=15532962292")
+                time.sleep(0.5)
 
-        if stop_sniper_toggle and keyboard.is_pressed(stop_sniper_key) and not sniper_paused:
-            logging.info(f"Hotkey pressed: stop_sniper_key={stop_sniper_key}")
-            self.temporarily_pause_sniper(pause_duration)
-            time.sleep(0.5)
+            if CONFIG_DATA["stop_sniper_toggle"] and keyboard.is_pressed(CONFIG_DATA["stop_sniper"]) and not sniper_paused:
+                logging.info(f"Hotkey pressed: stop_sniper_key={CONFIG_DATA['stop_sniper']}")
+                try:
+                    self.temporarily_pause_sniper(int(CONFIG_DATA["pause_duration"]))
+                except ValueError as e:
+                    logging.error(f"Invalid pause duration: {CONFIG_DATA['pause_duration']}, error: {e}")
+                time.sleep(0.5)
 
-        if toggle_sniper_toggle and keyboard.is_pressed(toggle_sniper_key):
-            logging.info(f"Hotkey pressed: toggle_sniper_key={toggle_sniper_key}")
-            self.toggle_sniping()
-            time.sleep(0.5)
+            if CONFIG_DATA["toggle_sniper_toggle"] and keyboard.is_pressed(CONFIG_DATA["toggle_sniper"]):
+                logging.info(f"Hotkey pressed: toggle_sniper_key={CONFIG_DATA['toggle_sniper']}")
+                self.toggle_sniping()
+                time.sleep(0.5)
+        
+        self.handle_skipper_hotkeys()
+
+    def handle_skipper_hotkeys(self):
+        if not KEYBIND_SUPPORT:
+            return
+
+        global loading_asset_skipper_active, main_menu_skipper_active
+        
+        if CONFIG_DATA["loading_asset_skipper_toggle"] and keyboard.is_pressed(CONFIG_DATA["loading_asset_skipper"]):
+            if not loading_asset_skipper_active:
+                loading_asset_skipper_active = True
+                threading.Thread(target=self.execute_loading_asset_skipper, daemon=True).start()
+        else:
+            loading_asset_skipper_active = False
+
+        if CONFIG_DATA["main_menu_skipper_toggle"] and keyboard.is_pressed(CONFIG_DATA["main_menu_skipper"]):
+            if not main_menu_skipper_active:
+                main_menu_skipper_active = True
+                threading.Thread(target=self.execute_main_menu_skipper, daemon=True).start()
+        else:
+            main_menu_skipper_active = False
+
+    def execute_loading_asset_skipper(self):
+        logging.info("Loading Asset Skipper activated")
+        global loading_asset_skipper_active
+        try:
+            if platform.system() != 'Windows':
+                logging.error("Loading Asset Skipper is only supported on Windows.")
+                return
+
+            while loading_asset_skipper_active:
+                try:
+                    autoit.send("\\")
+                    time.sleep(0.02)
+                    autoit.send("{ENTER}")
+                    time.sleep(0.02)
+                except Exception as e:
+                    logging.error(f"AutoIt send error: {e}")
+                    break
+
+        except Exception as e:
+            logging.error(f"Error in Loading Asset Skipper: {e}")
+        finally:
+            logging.info("Loading Asset Skipper deactivated")
+
+    def execute_main_menu_skipper(self):
+        logging.info("Main Menu Skipper activated")
+        global main_menu_skipper_active
+        try:
+            if platform.system() != 'Windows':
+                logging.error("Main Menu Skipper is only supported on Windows.")
+                return
+
+            while main_menu_skipper_active:
+                try:
+                    autoit.send("\\")
+                    time.sleep(0.02)
+                    autoit.send("{DOWN}")
+                    time.sleep(0.02)
+                    autoit.send("{ENTER}")
+                    time.sleep(0.02)
+                except Exception as e:
+                    logging.error(f"AutoIt send error: {e}")
+                    break
+
+        except Exception as e:
+            logging.error(f"Error in Main Menu Skipper: {e}")
+        finally:
+            main_menu_skipper_active = False
+            logging.info("Main Menu Skipper deactivated")
 
     def start_hotkey_monitor(self):
         logging.info("Starting hotkey monitor thread")
@@ -1734,12 +2863,16 @@ class MainWindow(QMainWindow):
         logging.info(f"Launching game with URI: {uri}")
         try:
             if platform.system() == 'Darwin':
-                if close_roblox_before_joining:
+                if CONFIG_DATA["leave_game_before_joining"]:
+                    self.execute_leave_game()
+                if CONFIG_DATA["close_roblox_before_joining"]:
                     self.kill_roblox_process()
                 subprocess.Popen(['open', uri])
                 logging.info(f"Launched Roblox with URI: {uri}")
             elif platform.system() == 'Windows':
-                if close_roblox_before_joining:
+                if CONFIG_DATA["leave_game_before_joining"]:
+                    self.execute_leave_game()
+                if CONFIG_DATA["close_roblox_before_joining"]:
                     self.kill_roblox_process()
                 os.startfile(uri)
             else:
@@ -1846,44 +2979,8 @@ class MainWindow(QMainWindow):
             logging.error(f"Error finding latest log file: {e}")
             return None, 0
 
-    async def is_game_loaded(self, process):
-        logging.info("Checking if game is loaded")
-        
-        roblox_version, _ = await self.get_roblox_version()
-        if not roblox_version:
-            logging.warning("Cannot determine Roblox version")
-            return False
-        
-        log_dir = await self.get_log_directory(roblox_version)
-        if not log_dir:
-            logging.warning("Log directory not available")
-            return False
-        
-        for attempt in range(30):
-            latest_file, latest_time = await self.find_latest_log_file(log_dir)
-            if not latest_file:
-                await asyncio.sleep(2)
-                continue
-            
-            try:
-                with open(latest_file, 'r', encoding='utf-8', errors='ignore') as f:
-                    logs = f.readlines()
-                    
-                for line in reversed(logs[-100:]):
-                    if 'BloxstrapRPC' in line and 'SetRichPresence' in line and 'Sol\'s RNG' in line:
-                        logging.info("Game loaded detected via rich presence log")
-                        return True
-                        
-            except Exception as e:
-                logging.error(f"Error reading log file on attempt {attempt}: {e}")
-            
-            await asyncio.sleep(2)
-        
-        logging.warning("Game load detection timeout")
-        return False
-
     async def verify_biome_match(self, expected_category, detected_keyword):
-        if not leave_if_wrong_biome or expected_category not in ["GLITCHED", "DREAMSPACE"]:
+        if not expected_category or expected_category not in ["GLITCHED", "DREAMSPACE", "CYBERSPACE"]:
             return True
         
         logging.info(f"Verifying biome match for category: {expected_category}")
@@ -1939,7 +3036,7 @@ class MainWindow(QMainWindow):
                             logging.info(f"Biome found: {biome}")
                             return biome
                         else:
-                            logging.debug("RichPresence line found but no biome info yet")
+                            logging.info("RichPresence line found but no biome info yet")
             except Exception as e:
                 logging.error(f"Error reading log file on attempt {attempt + 1}: {e}")
 
@@ -1949,56 +3046,10 @@ class MainWindow(QMainWindow):
         return None
 
     async def resolve_share_code(self, share_code):
-        if roblox_cookie:
-            csrf_token = await self.get_csrf_token()
-            if not csrf_token:
-                logging.error("Failed to get CSRF token for share code resolution")
-                return await self.fallback_to_private_api(share_code)
-
-            url = 'https://apis.roblox.com/sharelinks/v1/resolve-link'
-            headers = {
-                'Content-Type': 'application/json;charset=utf-8',
-                'Accept': 'application/json, text/plain, */*',
-                'Origin': 'https://www.roblox.com',
-                'Referer': 'https://www.roblox.com/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Cookie': f'.ROBLOSECURITY={roblox_cookie}',
-                'x-csrf-token': csrf_token
-            }
-
-            data = {
-                "linkId": share_code,
-                "linkType": "Server"
-            }
-
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, json=data, headers=headers) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            ps_data = result.get('privateServerInviteData', {})
-                            return ps_data.get('placeId'), ps_data.get('privateServerLinkCode')
-                        elif response.status == 403:
-                            logging.warning("CSRF token expired, refreshing...")
-                            self.csrf_token = None
-                            return await self.resolve_share_code(share_code)
-                        elif response.status == 401:
-                            logging.error("Authentication failed - cookie is invalid or expired")
-                            return await self.fallback_to_private_api(share_code)
-                        else:
-                            logging.error(f"Roblox API failed to resolve share code: {response.status}")
-                            return await self.fallback_to_private_api(share_code)
-            except Exception as e:
-                logging.error(f"Error resolving share code with Roblox API: {e}")
-                return await self.fallback_to_private_api(share_code)
-        else:
-            return await self.fallback_to_private_api(share_code)
-
-    async def fallback_to_private_api(self, share_code):
-        logging.info("Using private API for share code resolution")
+        logging.info("Resolving share code")
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(f'https://api-priv.nerdgpt.online/api/endpoints/roblox/resolve-link?linkId={share_code}') as response:
+                async with session.post(f'https://api-priv.vexsys.site/api/endpoints/roblox/resolve-link?linkId={share_code}') as response:
                     if response.status == 200:
                         result = await response.json()
                         return result.get('placeId'), result.get('privateServerLinkCode')
@@ -2009,34 +3060,104 @@ class MainWindow(QMainWindow):
             logging.error(f"Error resolving share code with private API: {e}")
             return None, None
 
-    async def get_csrf_token(self):
-        if hasattr(self, 'csrf_token') and self.csrf_token:
-            return self.csrf_token
-
-        headers = {
-            'Content-Type': 'application/json;charset=utf-8',
-            'Accept': 'application/json, text/plain, */*',
-            'Origin': 'https://www.roblox.com',
-            'Referer': 'https://www.roblox.com/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Cookie': f'.ROBLOSECURITY={roblox_cookie}'
-        }
-
+    async def resolve_ropro_link(self, ropro_url):
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post('https://auth.roblox.com/v2/logout', headers=headers) as response:
-                    csrf_token = response.headers.get('x-csrf-token')
-                    if csrf_token:
-                        self.csrf_token = csrf_token
-                        return csrf_token
+            logging.info(f"Resolving ro.pro/ropro.io link: {ropro_url}")
+            
+            if 'ro.pro' in ropro_url:
+                final_url = ropro_url
+            elif 'ropro.io' in ropro_url:
+                if '/join/' not in ropro_url:
+                    match = re.search(r'ropro\.io/([a-zA-Z0-9]+)', ropro_url)
+                    if match:
+                        code = match.group(1)
+                        final_url = f"https://ropro.io/join/{code}"
                     else:
-                        logging.error("Failed to get CSRF token from logout endpoint")
+                        final_url = ropro_url
+                else:
+                    final_url = ropro_url
+            else:
+                logging.warning(f"Not a ro.pro/ropro.io URL: {ropro_url}")
+                return None
+            
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0'
+                }
+                
+                async with session.get(final_url, headers=headers, allow_redirects=True, timeout=15) as response:
+                    if response.status == 200:
+                        html = await response.text()
+                        
+                        with open(SETTINGS_DIR / 'ropro_debug.html', 'w', encoding='utf-8') as f:
+                            f.write(html)
+
+                        pattern1 = r'window\.location\.replace\("(roblox://experiences/start\?[^"]+)"\)'
+                        match1 = re.search(pattern1, html)
+                        
+                        pattern2 = r'window\.location\.replace\("(roblox://placeID=[^"]+)"\)'
+                        match2 = re.search(pattern2, html)
+                        
+                        pattern3 = r'window\.location\.replace\("(robloxmobile://placeID=[^"]+)"\)'
+                        match3 = re.search(pattern3, html)
+                        
+                        pattern4 = r'(roblox://[^"\s]+)'
+                        match4 = re.search(pattern4, html)
+                        
+                        pattern5 = r'window\.location\.replace\("([^"]+)"\)'
+                        all_matches = re.findall(pattern5, html)
+                        for match_str in all_matches:
+                            if match_str.startswith('roblox://'):
+                                logging.info(f"Found roblox:// URL in window.location.replace: {match_str}")
+                                if 'experiences/start' in match_str or 'placeID=' in match_str:
+                                    deeplink = match_str
+                                    if deeplink.startswith('robloxmobile://'):
+                                        deeplink = deeplink.replace('robloxmobile://', 'roblox://')
+                                    logging.info(f"Using deeplink: {deeplink}")
+                                    return deeplink
+                        
+                        if match1:
+                            deeplink = match1.group(1)
+                            logging.info(f"Found PC deeplink (pattern1): {deeplink}")
+                            return deeplink
+                        elif match2:
+                            deeplink = match2.group(1)
+                            logging.info(f"Found deeplink (pattern2): {deeplink}")
+                            return deeplink
+                        elif match3:
+                            deeplink = match3.group(1).replace('robloxmobile://', 'roblox://')
+                            logging.info(f"Found mobile deeplink (converted, pattern3): {deeplink}")
+                            return deeplink
+                        elif match4:
+                            deeplink = match4.group(1)
+                            if deeplink.startswith('robloxmobile://'):
+                                deeplink = deeplink.replace('robloxmobile://', 'roblox://')
+                            logging.info(f"Found generic roblox:// URL (pattern4): {deeplink}")
+                            return deeplink
+                        
+                        logging.warning(f"No deeplink found in ro.pro/ropro.io page: {final_url}")
                         return None
+                    else:
+                        logging.error(f"Failed to fetch ro.pro/ropro.io page {final_url}: Status {response.status}")
+                        return None
+        except asyncio.TimeoutError:
+            logging.error(f"Timeout while resolving ro.pro/ropro.io link: {ropro_url}")
+            return None
         except Exception as e:
-            logging.error(f"Error getting CSRF token: {e}")
+            logging.error(f"Error resolving ro.pro/ropro.io link {ropro_url}: {e}")
             return None
 
-    async def process_server_link(self, content, embeds=None):
+    async def process_server_link(self, content, embeds=None, discord_user_id=None, discord_channel_id=None, discord_server_id=None):
         if self.is_processing:
             return
 
@@ -2057,22 +3178,29 @@ class MainWindow(QMainWindow):
                                 if "value" in field and field["value"]:
                                     content += f" {field['value']}"
             
-            url_match = URL_PATTERN.search(content)
-            if not url_match:
-                self.is_processing = False
-                return
-
             clean_content = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', content)
             clean_content = re.sub(r'[\u2000-\uFFFF]', '', clean_content)
+            clean_content = clean_content.replace("[", "").replace("]", "").replace("(", "").replace(")", "").replace("{", "").replace("}", "").replace("`", "").replace("~", "").replace("|", " ")
             clean_content = clean_content.lower()
-            logging.info(f"Processing content: {clean_content}")
 
+            logging.info(f"Processing content in channel id {discord_channel_id} on server id {discord_server_id}: {clean_content}")
+            
+            urls = []
+            url_pattern = re.compile(r'(?:(?:https?|roblox)://[^\s<>"]+|www\.[^\s<>"]+\.[^\s<>"]+|(?:ro\.pro|ropro\.io)/[^\s<>"]+)', re.IGNORECASE)
+            urls = url_pattern.findall(clean_content)
+            
+            if not urls:
+                self.is_processing = False
+                return
+            
             with open(KEYWORDS_FILE, 'r') as f:
                 keywords_data = json.load(f)
 
             blacklisted = False
-            for category in ["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"] + keywords_data.get("custom_categories", []):
-                if any(kw.lower() in clean_content for kw in keywords_data.get("blacklist", {}).get(category, [])):
+            for category in ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"] + keywords_data.get("custom_categories", []):
+                blacklist_kws = keywords_data.get("blacklist", {}).get(category, [])
+                if any(kw.lower() in clean_content for kw in blacklist_kws):
+                    logging.warning(f"Message blacklisted")
                     blacklisted = True
                     break
             
@@ -2083,30 +3211,32 @@ class MainWindow(QMainWindow):
             allowed = False
             categories_to_check = []
             
-            if glitchsniping:
+            if CONFIG_DATA["glitchsniping"]:
                 categories_to_check.append("Glitched")
-            if dreamsniping:
+            if CONFIG_DATA["dreamsniping"]:
                 categories_to_check.append("Dreamspace")
-            if jestersniping:
+            if CONFIG_DATA["cybersniping"]:
+                categories_to_check.append("Cyberspace")
+            if CONFIG_DATA["jestersniping"]:
                 categories_to_check.append("Jester")
-            if voidcoinsniping:
+            if CONFIG_DATA["voidcoinsniping"]:
                 categories_to_check.append("Void Coin")
             
             custom_categories = keywords_data.get("custom_categories", [])
             for custom_cat in custom_categories:
                 custom_cat_stripped = custom_cat.replace(" ", "_")
-                if globals().get(f"customcat_{custom_cat_stripped}", False):
+                if CONFIG_DATA.get(f"customcat_{custom_cat_stripped}", False):
                     categories_to_check.append(custom_cat)
             
             for category in categories_to_check:
                 if allowed:
                     break
-                   
+                
                 for kw in keywords_data.get("keywords", {}).get(category, []):
                     if kw.lower() in clean_content:
+                        logging.info(f"Match found: {category}")
                         allowed = True
                         matched_category = category.upper()
-                        logging.info(f"Matched keyword: {kw} in category {category}")
                         detected_keyword = kw
                         break
                 
@@ -2123,93 +3253,136 @@ class MainWindow(QMainWindow):
                         regex_pattern = re.compile(pattern, flags)
                         regex_match = regex_pattern.search(clean_content)
                         if regex_match:
+                            logging.info(f"Regex match found: {category}")
                             allowed = True
                             matched_category = category.upper()
-                            logging.info(f"Matched regex: {regex_match.group(0)} in category {category}")
                             detected_keyword = regex_match.group(0)
                             break
                     except re.error as e:
-                        logging.error(f"Invalid regex pattern for category {category}: {e}")
+                        logging.error(f"Invalid regex for {category}: {e}")
 
             if not allowed:
                 self.is_processing = False
                 return
             
-            if allowed and detected_keyword:
-                toast_thread = threading.Thread(
-                    target=lambda: self.show_toast("Keyword Matched", f"Matched: {detected_keyword}\nCategory: {matched_category}"),
-                    daemon=True
-                )
-                toast_thread.start()
+            uri = None
+            for url in urls:
+                url = url.strip()
+                
+                if match := re.search(r'https?://(?:www\.)?roblox\.com/games/(\d+)/[^?]+\?(?:private[_-]?server[_-]?link[_-]?code)=([\w-]+)', url, re.IGNORECASE):
+                    game_id, private_code = match.groups()
+                    uri = f"roblox://placeId={game_id}&linkCode={private_code}"
+                    break
+                elif match := re.search(r'https?://(?:www\.)?roblox\.com/share\?code=([a-f0-9]+)(?:&type=([A-Za-z]+))?', url):
+                    share_code = match.group(1)
+                    resolved_game_id, _ = await self.resolve_share_code(share_code)
+                    if resolved_game_id:
+                        game_id = resolved_game_id
+                    uri = f"roblox://navigation/share_links?code={share_code}&type=Server"
+                    break
+                elif match := re.search(r'https?://(?:www\.)?roblox\.com/games/start\?placeId=(\d+)&launchData=(\d+)/([a-f0-9\-]+)', url):
+                    place_id, redirect_place_id, game_instance_id = match.groups()
+                    uri = f"roblox://experiences/start?placeId={redirect_place_id}&gameInstanceId={game_instance_id}"
+                    game_id = redirect_place_id
+                    break
+                elif match := re.search(r'https?://(?:www\.)?roblox\.com/games/(\d+)/[^?]+\?launchData=(\d+)/([a-f0-9\-]+)', url):
+                    place_id, redirect_place_id, game_instance_id = match.groups()
+                    uri = f"roblox://experiences/start?placeId={redirect_place_id}&gameInstanceId={game_instance_id}"
+                    game_id = redirect_place_id
+                    break
+                elif match := re.search(r'https?://(?:www\.)?roblox\.com/games/start\?placeId=(\d+)(?:&launchData=([^&]+))?', url):
+                    place_id, launch_data = match.groups()
+                    uri = f"roblox://placeId={place_id}"
+                    if launch_data:
+                        uri += f"&launchData={launch_data}"
+                    game_id = place_id
+                    break
+                elif match := re.search(r'roblox://placeId=(\d+)(?:&linkCode=([\w-]+))?', url):
+                    place_id, link_code = match.groups()
+                    uri = f"roblox://placeId={place_id}"
+                    if link_code:
+                        uri += f"&linkCode={link_code}"
+                    game_id = place_id
+                    private_code = link_code
+                    break
+                elif match := re.search(ROPRO_PATTERN, url):
+                    if not CONFIG_DATA["snipe_ropro_links"]:
+                        logging.info(f"ro.pro/ropro.io snipping is disabled, skipping: {url}")
+                        continue
+                        
+                    ropro_code = match.group(1)
+                    
+                    if 'ropro.io' in url:
+                        if '/join/' in url:
+                            full_url = url
+                        else:
+                            full_url = f"https://ropro.io/join/{ropro_code}"
+                    else:
+                        full_url = f"https://ro.pro/{ropro_code}"
+                    
+                    deeplink = await self.resolve_ropro_link(full_url)
+                    if deeplink:
+                        uri = deeplink
+                        
+                        if "placeId=" in deeplink:
+                            place_match = re.search(r'placeId=(\d+)', deeplink)
+                            if place_match:
+                                game_id = place_match.group(1)
+                        elif "placeID=" in deeplink:
+                            place_match = re.search(r'placeID=(\d+)', deeplink)
+                            if place_match:
+                                game_id = place_match.group(1)
+                        
+                        logging.info(f"Resolved ro.pro/ropro.io link {url} to deeplink: {uri}")
+                        break
+                    else:
+                        logging.warning(f"Could not resolve ro.pro/ropro.io link: {url}")
+                else:
+                    logging.info(f"Could not extract join link from message.")
+                    return
             
-            if game_id and str(game_id) != "15532962292":
-                logging.info(f"Invalid game ID detected: {game_id}.")
+            if not uri:
                 self.is_processing = False
                 return
 
-            if url_match:
-                url = url_match.group('url')
-                if match := PRIVATE_SERVER_PATTERN.search(url):
-                    game_id, private_code = match.groups()
-                    uri = f"{launch_protocol}placeId={game_id}&linkCode={private_code}"
-                    if str(game_id) != "15532962292" and game_id != None:
-                        logging.info(f"Place ID mismatch: {game_id}")
-                        self.is_processing = False
-                        return
-                    await asyncio.get_event_loop().run_in_executor(executor, self.launch_game, uri)
-                    logging.info(f"Launching private server with game ID: {game_id} and code: {private_code}")
-                elif match := SHARE_CODE_PATTERN.search(url):
-                    share_code = match.group(1)
-                    uri = f"{launch_protocol}navigation/share_links?code={share_code}&type=Server"
-                    resolved_game_id, resolved_private_code = await self.resolve_share_code(share_code)
-                    if resolved_game_id:
-                        game_id = resolved_game_id
-                    if str(game_id) != "15532962292" and game_id != None:
-                        logging.info(f"Place ID mismatch: {game_id}")
-                        self.is_processing = False
-                        return
-                    await asyncio.get_event_loop().run_in_executor(executor, self.launch_game, uri)
-                    logging.info(f"Launching private server with game ID: {game_id} and code: {share_code}")
-                elif match := DEEPLINK_PATTERN.search(url):
-                    place_id, launch_data = match.groups()
-                    uri = f"{launch_protocol}placeId={place_id}"
-                    if launch_data:
-                        uri += f"&launchData={launch_data}"
-                    if str(game_id) != "15532962292" and game_id != None:
-                        logging.info(f"Place ID mismatch: {game_id}")
-                        self.is_processing = False
-                        return
-                    await asyncio.get_event_loop().run_in_executor(executor, self.launch_game, uri)
-                    logging.info(f"Launching private server with game ID: {place_id} and launch data: {launch_data}")
+            if str(game_id) != "15532962292" and game_id and CONFIG_DATA["only_join_sols_links"]:
+                self.is_processing = False
+                return
 
-            if matched_category in ["GLITCHED", "DREAMSPACE"]:
-                self.stop_running_external_detectors()
-
-            if minimize_other_windows == True:
+            logging.info(f"Launching game...")
+            await asyncio.get_event_loop().run_in_executor(executor, self.launch_game, uri)
+            
+            if CONFIG_DATA["minimize_other_windows"]:
                 self.minimize_other_windows()
         
-            roblox_running, roblox_process = await self.is_roblox_running()
+            roblox_running, _ = await self.is_roblox_running()
             iterator = 0
             while not roblox_running and iterator < 50:
                 iterator += 1
                 await asyncio.sleep(.5)
-                roblox_running, roblox_process = await self.is_roblox_running()
+                roblox_running, _ = await self.is_roblox_running()
         
             if iterator >= 50:
+                logging.error("Roblox process did not start")
                 self.is_processing = False
                 return
 
             toast_msg = (
                 f"Successfully sniped!\n\nBiome: {matched_category}\nKeyword: {detected_keyword or 'Unknown'}"
-                if matched_category in ["GLITCHED", "DREAMSPACE"]
+                if matched_category in ["GLITCHED", "DREAMSPACE", "CYBERSPACE"]
                 else f"Successfully sniped!\n\nCategory: {matched_category or 'Unknown'}\nKeyword: {detected_keyword or 'Unknown'}"
             )
-            threading.Thread(
-                target=lambda: self.show_toast("Successful Snipe", toast_msg),
-                daemon=True
-            ).start()
+            #threading.Thread(
+            #    target=lambda: self.show_toast("Successful Snipe", toast_msg),
+            #    daemon=True
+            #).start()
+            self.show_toast("Successful Snipe", toast_msg)
+            
+            if CONFIG_DATA["auto_pause_sniper"]:
+                logging.info("Auto-pausing sniper after snipe")
+                self.temporarily_pause_sniper(int(CONFIG_DATA["pause_duration"]))
 
-            if matched_category in ["GLITCHED", "DREAMSPACE"]:
+            if matched_category in ["GLITCHED", "DREAMSPACE", "CYBERSPACE"]:
                 biome_match = await self.verify_biome_match(matched_category, detected_keyword)
                 if not biome_match:
                     self.is_processing = False
@@ -2220,15 +3393,18 @@ class MainWindow(QMainWindow):
         finally:
             self.is_processing = False
 
+    def create_redirect_deeplink(self, redirect_place_id, game_instance_id):
+        return f"roblox://experiences/start?placeId={redirect_place_id}&gameInstanceId={game_instance_id}"
+
     def minimize_other_windows(self):
         logging.info("Minimizing other windows")
         try:
             if platform.system() == 'Windows':
-                import win32gui
-                import win32con
                 def enum_handler(hwnd, lParam):
                     if hwnd != self.winId() and win32gui.IsWindowVisible(hwnd):
-                        win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+                        window_title = win32gui.GetWindowText(hwnd)
+                        if "Roblox" not in window_title:
+                            win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
                 win32gui.EnumWindows(enum_handler, None)
             elif platform.system() == 'Darwin':
                 script = '''
@@ -2237,7 +3413,7 @@ class MainWindow(QMainWindow):
                     set allApps to every application process whose visible is true and background only is false
                     repeat with appProcess in allApps
                         set appName to name of appProcess
-                        if appName is not frontApp and appName is not "Finder" and appName is not "Sol Sniper" then
+                        if appName is not frontApp and appName is not "Finder" and appName is not "Sol Sniper" and appName is not "Roblox" then
                             try
                                 tell application "System Events" to tell process appName
                                     set miniaturized of every window to true
@@ -2256,8 +3432,6 @@ class MainWindow(QMainWindow):
         logging.info("Focusing Roblox window")
         try:
             if platform.system() == 'Windows':
-                import win32gui
-                import win32con
                 def enum_handler(hwnd, lParam):
                     if 'Roblox' in win32gui.GetWindowText(hwnd):
                         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
@@ -2284,6 +3458,38 @@ class MainWindow(QMainWindow):
                 subprocess.run(['osascript', '-e', script])
         except Exception as e:
             logging.error(f"Error focusing Roblox window: {e}")
+
+    def execute_leave_game(self):
+        logging.info("Executing leave game sequence")
+        try:
+            if platform.system() == 'Windows':
+                def is_roblox_focused():
+                    hwnd = win32gui.GetForegroundWindow()
+                    window_title = win32gui.GetWindowText(hwnd)
+                    return "Roblox" in window_title
+
+                if is_roblox_focused():
+                    autoit.send("{ESCAPE}")
+                    time.sleep(0.1)
+                    autoit.send("l")
+                    time.sleep(0.1)
+                    autoit.send("{ENTER}")
+            elif platform.system() == 'Darwin':
+                script = '''
+                tell application "System Events"
+                    set frontApp to name of first application process whose frontmost is true
+                    if frontApp contains "Roblox" then
+                        keystroke escape
+                        delay 0.1
+                        keystroke "l"
+                        delay 0.1
+                        keystroke return
+                    end if
+                end tell
+                '''
+                subprocess.run(['osascript', '-e', script])
+        except Exception as e:
+            logging.error(f"Error executing leave game sequence: {e}")
     
     def kill_roblox_process(self):
         logging.info("Killing Roblox process")
@@ -2299,10 +3505,6 @@ class MainWindow(QMainWindow):
                 subprocess.run(['killall', '-9', 'Roblox'], capture_output=True)
         except Exception as e:
             logging.error(f"Error killing Roblox process: {e}")
-
-    def stop_running_external_detectors(self):
-        self.toggle_oysterdetector_if_running()
-        self.toggle_maxstellar_if_running()
     
     def create_sidebar_btn(self, text, icon=None, svg=None, color="#4a7bff", url=None):
         btn = QPushButton()
@@ -2399,7 +3601,7 @@ class MainWindow(QMainWindow):
             """)
             if url:
                 btn.clicked.connect(lambda: webbrowser.open(url))
-        elif not icon and not svg and color == "#4a7bff" and not url and gradient_theme == True:
+        elif not icon and not svg and color == "#4a7bff" and not url and CONFIG_DATA["gradient_theme"] == True:
             btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -2468,20 +3670,26 @@ class MainWindow(QMainWindow):
     def create_sniper_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        frame = GradientFrame()
-        frame.setStyleSheet("border-radius: 12px;")
-        frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(20, 20, 20, 20)
-        
-        title = QLabel("Sniper Configuration")
-        title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0;")
-        frame_layout.addWidget(title)
-        
-        form_layout = QVBoxLayout()
-        form_layout.setSpacing(15)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(30, 30, 30, 30)
+        scroll_layout.setSpacing(20)
+
+        base_cat_frame = GradientFrame()
+        base_cat_frame.setStyleSheet("border-radius: 12px;")
+        base_cat_layout = QVBoxLayout(base_cat_frame)
+        base_cat_layout.setContentsMargins(20, 20, 20, 20)
+
+        base_cat_title = QLabel("Base Categories")
+        base_cat_title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0; margin-bottom: 15px;")
+        base_cat_layout.addWidget(base_cat_title)
 
         def add_checkbox_row(label_text, checkbox):
             row_widget = QWidget()
@@ -2495,25 +3703,27 @@ class MainWindow(QMainWindow):
             row_layout.addStretch()
             return row_widget
 
-        base_categories_label = QLabel("Base Categories")
-        base_categories_label.setStyleSheet("font-size: 18px; font-weight: 600; color: #e0e0e0; margin-top: 10px; margin-bottom: 5px;")
-        form_layout.addWidget(base_categories_label)
-
         self.glitch_cb = QCheckBox()
-        self.glitch_cb.setChecked(glitchsniping)
-        form_layout.addWidget(add_checkbox_row("Glitch Sniping", self.glitch_cb))
+        self.glitch_cb.setChecked(CONFIG_DATA["glitchsniping"])
+        base_cat_layout.addWidget(add_checkbox_row("Glitch Sniping", self.glitch_cb))
 
         self.dream_cb = QCheckBox()
-        self.dream_cb.setChecked(dreamsniping)
-        form_layout.addWidget(add_checkbox_row("Dreamspace Sniping", self.dream_cb))
+        self.dream_cb.setChecked(CONFIG_DATA["dreamsniping"])
+        base_cat_layout.addWidget(add_checkbox_row("Dreamspace Sniping", self.dream_cb))
+
+        self.cyber_cb = QCheckBox()
+        self.cyber_cb.setChecked(CONFIG_DATA["cybersniping"])
+        base_cat_layout.addWidget(add_checkbox_row("Cyberspace Sniping", self.cyber_cb))
 
         self.jester_cb = QCheckBox()
-        self.jester_cb.setChecked(jestersniping)
-        form_layout.addWidget(add_checkbox_row("Jester Sniping", self.jester_cb))
+        self.jester_cb.setChecked(CONFIG_DATA["jestersniping"])
+        base_cat_layout.addWidget(add_checkbox_row("Jester Sniping", self.jester_cb))
 
         self.void_cb = QCheckBox()
-        self.void_cb.setChecked(voidcoinsniping)
-        form_layout.addWidget(add_checkbox_row("Void Coin Sniping", self.void_cb))
+        self.void_cb.setChecked(CONFIG_DATA["voidcoinsniping"])
+        base_cat_layout.addWidget(add_checkbox_row("Void Coin Sniping", self.void_cb))
+
+        scroll_layout.addWidget(base_cat_frame)
 
         custom_categories = []
         if KEYWORDS_FILE.exists():
@@ -2524,93 +3734,329 @@ class MainWindow(QMainWindow):
             except:
                 pass
 
-        self.custom_category_checkboxes = {}
-        for category in custom_categories:
-            cb = QCheckBox()
-            setting_name = f"customcat_{category.replace(' ', '_')}"
-            cb.setChecked(globals().get(setting_name, False))
-            cb.setText(category)
-            cb.setStyleSheet("font-size: 16px; color: #e0e0e0;")
-            cb.stateChanged.connect(self.save_settings)
-            self.custom_category_checkboxes[category] = cb
-            form_layout.addWidget(cb)
+        if custom_categories:
+            custom_cat_frame = GradientFrame()
+            custom_cat_frame.setStyleSheet("border-radius: 12px;")
+            custom_cat_layout = QVBoxLayout(custom_cat_frame)
+            custom_cat_layout.setContentsMargins(20, 20, 20, 20)
 
-        advanced_settings_label = QLabel("Advanced Settings")
-        advanced_settings_label.setStyleSheet("font-size: 18px; font-weight: 600; color: #e0e0e0; margin-top: 20px; margin-bottom: 5px;")
-        form_layout.addWidget(advanced_settings_label)
+            custom_cat_title = QLabel("Custom Categories")
+            custom_cat_title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0; margin-bottom: 15px;")
+            custom_cat_layout.addWidget(custom_cat_title)
+
+            self.custom_category_checkboxes = {}
+            for category in custom_categories:
+                cb = QCheckBox()
+                setting_name = f"customcat_{category.replace(' ', '_')}"
+                cb.setChecked(CONFIG_DATA.get(setting_name, False))
+                cb.setText(category)
+                cb.setStyleSheet("font-size: 16px; color: #e0e0e0;")
+                cb.stateChanged.connect(self.save_settings)
+                self.custom_category_checkboxes[category] = cb
+                custom_cat_layout.addWidget(cb)
+
+            scroll_layout.addWidget(custom_cat_frame)
+
+        advanced_frame = GradientFrame()
+        advanced_frame.setStyleSheet("border-radius: 12px;")
+        advanced_layout = QVBoxLayout(advanced_frame)
+        advanced_layout.setContentsMargins(20, 20, 20, 20)
+
+        advanced_title = QLabel("Advanced Settings")
+        advanced_title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0; margin-bottom: 15px;")
+        advanced_layout.addWidget(advanced_title)
 
         self.close_roblox_cb = QCheckBox()
-        self.close_roblox_cb.setChecked(close_roblox_before_joining)
-        form_layout.addWidget(add_checkbox_row("Close Roblox Before Joining a Snipe", self.close_roblox_cb))
+        self.close_roblox_cb.setChecked(CONFIG_DATA["close_roblox_before_joining"])
+        advanced_layout.addWidget(add_checkbox_row("Close Roblox Before Joining a Snipe", self.close_roblox_cb))
 
-        self.leave_biome_cb = QCheckBox()
-        self.leave_biome_cb.setChecked(leave_if_wrong_biome)
-        form_layout.addWidget(add_checkbox_row("Close Roblox if not Glitched/Dreamspace", self.leave_biome_cb))
+        self.leave_game_cb = QCheckBox()
+        self.leave_game_cb.setChecked(CONFIG_DATA["leave_game_before_joining"])
+        advanced_layout.addWidget(add_checkbox_row("Leave Game Before Joining a Snipe", self.leave_game_cb))
+
+        leave_game_label = QLabel("This setting will automatically press Esc -> L -> Enter to leave the game the user is in.\nWill only execute if the user is tabbed into Roblox.")
+        leave_game_label.setStyleSheet("font-size: 12px; color: #e0e0e0; margin-top: 5px;")
+        advanced_layout.addWidget(leave_game_label)
 
         self.minimize_other_windows_cb = QCheckBox()
-        self.minimize_other_windows_cb.setChecked(minimize_other_windows)
-        form_layout.addWidget(add_checkbox_row("Minimize Other Windows on Snipe", self.minimize_other_windows_cb))
-        
-        frame_layout.addLayout(form_layout)
+        self.minimize_other_windows_cb.setChecked(CONFIG_DATA["minimize_other_windows"])
+        advanced_layout.addWidget(add_checkbox_row("Minimize Other Windows on Snipe (Besides Roblox)", self.minimize_other_windows_cb))
 
-        protocol_label = QLabel("Launch Protocol")
-        protocol_label.setStyleSheet("font-size: 18px; font-weight: 600; color: #e0e0e0; margin-top: 20px; margin-bottom: 5px;")
-        frame_layout.addWidget(protocol_label)
+        self.auto_pause_sniper_cb = QCheckBox()
+        self.auto_pause_sniper_cb.setChecked(CONFIG_DATA["auto_pause_sniper"])
+        advanced_layout.addWidget(add_checkbox_row("Auto Pause Sniper Upon Snipe", self.auto_pause_sniper_cb))
 
-        protocol_layout = QHBoxLayout()
-        protocol_layout.setSpacing(15)
-        protocol_sublabel = QLabel("Protocol:")
-        protocol_sublabel.setStyleSheet("font-size: 16px; color: #e0e0e0;")
-        protocol_layout.addWidget(protocol_sublabel)
-        self.protocol_combo = QComboBox()
-        self.protocol_combo.addItems([
-            "roblox://",
-            "roblox-player://",
-            "roblox-uwp-migration://"
-        ])
-        self.protocol_combo.setCurrentText(launch_protocol)
-        protocol_layout.addWidget(self.protocol_combo)
-        frame_layout.addLayout(protocol_layout)
+        pause_duration_label = QLabel("This setting will automatically pause the sniper for the configured length in the Hotkeys tab\nwhenever you snipe a category.")
+        pause_duration_label.setStyleSheet("font-size: 12px; color: #e0e0e0; margin-top: 5px;")
+        advanced_layout.addWidget(pause_duration_label)
 
-        credentials_label = QLabel("Credentials")
-        credentials_label.setStyleSheet("font-size: 18px; font-weight: 600; color: #e0e0e0; margin-top: 20px; margin-bottom: 5px;")
-        frame_layout.addWidget(credentials_label)
+        self.snipe_ropro_links_cb = QCheckBox()
+        self.snipe_ropro_links_cb.setChecked(CONFIG_DATA["snipe_ropro_links"])
+        advanced_layout.addWidget(add_checkbox_row("Snipe RoPro Links", self.snipe_ropro_links_cb))
+
+        snipe_ropro_links_label = QLabel("This setting will make it so you will still join servers even if the user who sent the message\nsends a ro.pro link instead of a roblox.com link.")
+        snipe_ropro_links_label.setStyleSheet("font-size: 12px; color: #e0e0e0; margin-top: 5px;")
+        advanced_layout.addWidget(snipe_ropro_links_label)
+
+        if CONFIG_DATA["advanced_mode"] == True:
+            self.only_join_sols_links_cb = QCheckBox()
+            self.only_join_sols_links_cb.setChecked(CONFIG_DATA["only_join_sols_links"])
+            advanced_layout.addWidget(add_checkbox_row("Only Join Sol's RNG Servers When Sniping", self.only_join_sols_links_cb))
+
+            only_join_sols_label = QLabel("This setting will make the sniper only join private servers that lead to Sol's RNG when sniping.\nTurning this off will allow you to snipe other Roblox games.")
+            only_join_sols_label.setStyleSheet("font-size: 12px; color: #e0e0e0; margin-top: 5px;")
+            advanced_layout.addWidget(only_join_sols_label)
+
+        scroll_layout.addWidget(advanced_frame)
+
+        if platform.system() == "Windows":
+            advanced_protocol_frame = GradientFrame()
+            advanced_protocol_frame.setStyleSheet("border-radius: 12px;")
+            adv_layout = QVBoxLayout(advanced_protocol_frame)
+            adv_layout.setContentsMargins(20, 20, 20, 20)
+
+            override_protocol_label = QLabel("Protocol Override (Will only override roblox://)")
+            override_protocol_label.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0; margin-bottom: 15px;")
+            adv_layout.addWidget(override_protocol_label)
+
+            version_selection_layout = QHBoxLayout()
+            version_selection_layout.setSpacing(15)
+            
+            version_label = QLabel("Selected Version:")
+            version_label.setStyleSheet("font-size: 16px; color: #e0e0e0;")
+            version_selection_layout.addWidget(version_label)
+            
+            self.override_version_label = QLabel("No version selected")
+            self.override_version_label.setStyleSheet("font-size: 14px; color: #888888; background-color: #2d2d2d; border: 1px solid #444; border-radius: 6px; padding: 8px 12px;")
+            self.override_version_label.setMinimumHeight(50)
+            self.override_version_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            version_selection_layout.addWidget(self.override_version_label)
+            
+            self.select_override_btn = QPushButton("Select Version")
+            self.select_override_btn.setFixedSize(170, 40)
+            if CONFIG_DATA["gradient_theme"] == True:
+                self.select_override_btn.setStyleSheet("""
+                    QPushButton {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4a7bff, stop:1 #8a4caf);
+                        color: white;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        font-size: 13px;
+                    }
+                    QPushButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5a8bff, stop:1 #9a5cbf);
+                    }
+                    QPushButton:disabled {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3a5baf, stop:1 #7a3c9f);
+                    }
+                """)
+            else:
+                self.select_override_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #4a7bff;
+                        color: white;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        font-size: 13px;
+                    }
+                    QPushButton:hover {
+                        background-color: #5a8bff;
+                    }
+                    QPushButton:disabled {
+                        background-color: #3a5baf;
+                    }
+                """)
+            self.select_override_btn.clicked.connect(self.select_override_version)
+            version_selection_layout.addWidget(self.select_override_btn)
+            
+            adv_layout.addLayout(version_selection_layout)
+
+            self.not_supported_note_label = QLabel("Note: The newest Microsoft Store version of Roblox (Name is \"Roblox - Windows\") is not supported.")
+            self.not_supported_note_label.setStyleSheet("font-size: 12px; color: #888888; margin-top: 8px; margin-bottom: 0px;")
+            self.not_supported_note_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            adv_layout.addWidget(self.not_supported_note_label)
+
+            self.protocol_status_label = QLabel("No version selected for override")
+            self.protocol_status_label.setStyleSheet("font-size: 13px; color: #ff5555; font-weight: 500; margin-top: 8px; margin-bottom: 12px;")
+            self.protocol_status_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            adv_layout.addWidget(self.protocol_status_label)
+
+            protocol_buttons_layout = QHBoxLayout()
+            protocol_buttons_layout.setSpacing(10)
+            
+            self.override_btn = QPushButton("Override Protocol")
+            self.override_btn.setFixedHeight(40)
+            if CONFIG_DATA["gradient_theme"] == True:
+                self.override_btn.setStyleSheet("""
+                    QPushButton {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4a7bff, stop:1 #8a4caf);
+                        color: white;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        font-size: 14px;
+                    }
+                    QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5a8bff, stop:1 #9a5cbf);
+                    }
+                    QPushButton:disabled {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3a5baf, stop:1 #7a3c9f);
+                    }
+                """)
+            else:
+                self.override_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #4a7bff;
+                        color: white;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        font-size: 14px;
+                    }
+                    QPushButton:hover {
+                        background-color: #5a8bff;
+                    }
+                    QPushButton:disabled {
+                        background-color: #3a5baf;
+                    }
+                """)
+            self.override_btn.clicked.connect(self.override_roblox_protocol)
+            protocol_buttons_layout.addWidget(self.override_btn, 1)
+            
+            self.restore_btn = QPushButton("Restore Protocol")
+            self.restore_btn.setFixedHeight(40)
+            if CONFIG_DATA["gradient_theme"] == True:
+                self.restore_btn.setStyleSheet("""
+                    QPushButton {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4a7bff, stop:1 #8a4caf);
+                        color: white;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        font-size: 14px;
+                    }
+                    QPushButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5a8bff, stop:1 #9a5cbf);
+                    }
+                    QPushButton:disabled {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3a5baf, stop:1 #7a3c9f);
+                    }
+                """)
+            else:
+                self.restore_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #4a7bff;
+                        color: white;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        font-size: 14px;
+                    }
+                    QPushButton:hover {
+                        background-color: #5a8bff;
+                    }
+                    QPushButton:disabled {
+                        background-color: #3a5baf;
+                    }
+                """)
+            self.restore_btn.clicked.connect(self.restore_roblox_protocol)
+            protocol_buttons_layout.addWidget(self.restore_btn, 1)
+            
+            adv_layout.addLayout(protocol_buttons_layout)
+
+            scroll_layout.addWidget(advanced_protocol_frame)
+
+        credentials_frame = GradientFrame()
+        credentials_frame.setStyleSheet("border-radius: 12px;")
+        credentials_layout = QVBoxLayout(credentials_frame)
+        credentials_layout.setContentsMargins(20, 20, 20, 20)
+
+        credentials_title = QLabel("Credentials")
+        credentials_title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0; margin-bottom: 15px;")
+        credentials_layout.addWidget(credentials_title)
 
         token_layout = QHBoxLayout()
         token_layout.setSpacing(15)
+
+        token_star = ClickableLabel("★", "https://github.com/vexsyx/sniper-v3?tab=readme-ov-file#%EF%B8%8F-configuration:~:text=Credential%20Setup%20Guide")
+        token_star.setStyleSheet("font-size: 16px; color: #e0e0e0;")
+        token_star.setToolTip("The Discord Token is a required input. Click the star to learn how to get your Discord Token.")
+        token_layout.addWidget(token_star)
+
         token_label = QLabel("Discord Token:")
         token_label.setStyleSheet("font-size: 16px; color: #e0e0e0;")
         token_layout.addWidget(token_label)
+
+        token_input_widget = QWidget()
+        token_input_layout = QHBoxLayout(token_input_widget)
+        token_input_layout.setContentsMargins(0, 0, 0, 0)
+        token_input_layout.setSpacing(0)
+
         self.token_input = QLineEdit()
-        self.token_input.setText(token)
+        self.token_input.setText(CONFIG_DATA["token"])
         self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.token_input.setPlaceholderText("Enter your Discord token")
-        token_layout.addWidget(self.token_input)
-        frame_layout.addLayout(token_layout)
+        self.token_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+                border: 1px solid #444;
+                border-top-left-radius: 6px;
+                border-bottom-left-radius: 6px;
+                border-top-right-radius: 0px;
+                border-bottom-right-radius: 0px;
+                padding: 8px 12px;
+                font-size: 14px;
+                border-right: none;
+            }
+        """)
+        self.token_input.setFixedHeight(50)
+        token_input_layout.addWidget(self.token_input)
 
-        cookie_layout = QHBoxLayout()
-        cookie_layout.setSpacing(15)
-        cookie_label = QLabel("Roblox Cookie:")
-        cookie_label.setStyleSheet("font-size: 16px; color: #e0e0e0;")
-        cookie_layout.addWidget(cookie_label)
-        self.cookie_input = QLineEdit()
-        self.cookie_input.setText(roblox_cookie)
-        self.cookie_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.cookie_input.setPlaceholderText("Enter your Roblox .ROBLOSECURITY cookie")
-        cookie_layout.addWidget(self.cookie_input)
-        frame_layout.addLayout(cookie_layout)
-        
-        status_label = QLabel("Sniper Status")
-        status_label.setStyleSheet("font-size: 18px; font-weight: 600; color: #e0e0e0; margin-top: 20px; margin-bottom: 5px;")
-        frame_layout.addWidget(status_label)
+        self.token_eye_btn = QPushButton()
+        self.token_eye_btn.setFixedSize(50, 50)
+        self.token_eye_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.token_eye_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2d2d2d;
+                border: 1px solid #444;
+                border-top-left-radius: 0px;
+                border-bottom-left-radius: 0px;
+                border-top-right-radius: 6px;
+                border-bottom-right-radius: 6px;
+                border-left: none;
+            }
+            QPushButton:hover {
+                background-color: #3d3d3d;
+            }
+        """)
+
+        self.token_eye_svg = QSvgWidget(self.token_eye_btn)
+        self.token_eye_svg.load(QByteArray(EYE_CLOSED_SVG))
+        self.token_eye_svg.setFixedSize(20, 20)
+        self.token_eye_svg.move(15, 15)
+        self.token_eye_svg.setStyleSheet("background: transparent;")
+
+        self.token_eye_btn.clicked.connect(self.toggle_token_visibility)
+        token_input_layout.addWidget(self.token_eye_btn)
+
+        token_layout.addWidget(token_input_widget)
+        credentials_layout.addLayout(token_layout)
+
+        scroll_layout.addWidget(credentials_frame)
+
+        status_frame = GradientFrame()
+        status_frame.setStyleSheet("border-radius: 12px;")
+        status_layout = QVBoxLayout(status_frame)
+        status_layout.setContentsMargins(20, 20, 20, 20)
+
+        status_title = QLabel("Sniper Status")
+        status_title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0; margin-bottom: 15px;")
+        status_layout.addWidget(status_title)
         
         self.status_label = QLabel("Status: Stopped")
         self.status_label.setStyleSheet("font-size: 14px; color: #ff5555;")
-        frame_layout.addWidget(self.status_label)
+        status_layout.addWidget(self.status_label)
         
         self.start_btn = QPushButton("Start Sniping")
         self.start_btn.setFixedHeight(50)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.start_btn.setStyleSheet("""
                 QPushButton {
                     font-weight: 600;
@@ -2644,12 +4090,11 @@ class MainWindow(QMainWindow):
                     background-color: #3a5baf;
                 }
             """)
-        frame_layout.addWidget(self.start_btn)
-        frame_layout.addStretch()
+        status_layout.addWidget(self.start_btn)
 
         self.save_btn = QPushButton("Save Settings")
         self.save_btn.setFixedHeight(45)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.save_btn.setStyleSheet("""
                 QPushButton {
                     font-weight: 500;
@@ -2676,15 +4121,99 @@ class MainWindow(QMainWindow):
                 }
             """)
         self.save_btn.clicked.connect(self.save_settings_btn)
-        frame_layout.addWidget(self.save_btn)
-        
-        layout.addWidget(frame)
-        layout.addStretch()
+        status_layout.addWidget(self.save_btn)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(tab)
-        return scroll
+        scroll_layout.addWidget(status_frame)
+        scroll_layout.addStretch()
+
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+        return tab
+
+    def toggle_token_visibility(self):
+        if self.token_input.echoMode() == QLineEdit.EchoMode.Password:
+            self.token_input.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.token_eye_svg.load(QByteArray(EYE_OPEN_SVG))
+        else:
+            self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.token_eye_svg.load(QByteArray(EYE_CLOSED_SVG))
+        self.token_input.setCursorPosition(0)
+
+    def select_override_version(self):
+        if platform.system() != 'Windows':
+            QMessageBox.warning(self, "Unsupported Platform", "Protocol override is only available on Windows.")
+            return
+        
+        dialog = RobloxVersionDialog(self, allow_custom=CONFIG_DATA["advanced_mode"])
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_version = dialog.get_selected_version()
+            if selected_version:
+                self.selected_override_version = selected_version
+                self.override_version_label.setText(selected_version["name"])
+                self.update_protocol_status()
+
+    def override_roblox_protocol(self):
+        if not hasattr(self, 'selected_override_version') or not self.selected_override_version:
+            QMessageBox.warning(self, "No Version Selected", "Please select a Roblox version first.")
+            return
+        
+        success = override_roblox_protocol(
+            self.selected_override_version["path"], 
+            self.selected_override_version["type"]
+        )
+        
+        if success:
+            QMessageBox.information(self, "Success", "ROBLOX protocol overridden successfully!")
+            self.update_protocol_status()
+        else:
+            QMessageBox.warning(self, "Error", "Failed to override ROBLOX protocol. Please try running as administrator.")
+
+    def restore_roblox_protocol(self):
+        success = restore_roblox_protocol()
+        
+        if success:
+            QMessageBox.information(self, "Success", "ROBLOX protocol restored successfully!")
+            self.update_protocol_status()
+        else:
+            QMessageBox.warning(self, "Error", "Failed to restore ROBLOX protocol. Please try running as administrator.")
+
+    def update_protocol_status(self):
+        if platform.system() != 'Windows':
+            self.protocol_status_label.setText("Windows only feature")
+            self.select_override_btn.setEnabled(False)
+            self.override_btn.setEnabled(False)
+            self.restore_btn.setEnabled(False)
+            return
+        
+        is_overridden = is_roblox_protocol_overridden()
+        has_selected_version = hasattr(self, 'selected_override_version') and self.selected_override_version is not None
+        
+        if is_overridden:
+            target = get_roblox_protocol_target()
+            if target and has_selected_version:
+                current_path = self.selected_override_version["path"].lower().replace('"', '')
+                target_path = target.lower().replace('"', '')
+                if current_path in target_path:
+                    self.protocol_status_label.setText("✓ ROBLOX protocol overridden and matches selected version")
+                    self.protocol_status_label.setStyleSheet("font-size: 13px; color: #4CAF50; font-weight: 500; padding: 8px 0px;")
+                    self.override_btn.setEnabled(False)
+                else:
+                    self.protocol_status_label.setText("⚠ ROBLOX protocol overridden but points to different version")
+                    self.protocol_status_label.setStyleSheet("font-size: 13px; color: #FF9800; font-weight: 500; padding: 8px 0px;")
+                    self.override_btn.setEnabled(True)
+            else:
+                self.protocol_status_label.setText("✓ ROBLOX protocol overridden")
+                self.protocol_status_label.setStyleSheet("font-size: 13px; color: #4CAF50; font-weight: 500; padding: 8px 0px;")
+                self.override_btn.setEnabled(has_selected_version)
+            
+            self.restore_btn.setEnabled(True)
+        else:
+            self.protocol_status_label.setText("✗ ROBLOX protocol not overridden")
+            self.protocol_status_label.setStyleSheet("font-size: 13px; color: #ff5555; font-weight: 500; padding: 8px 0px;")
+            self.override_btn.setEnabled(has_selected_version)
+            self.restore_btn.setEnabled(False)
+        
+        self.select_override_btn.setEnabled(True)
     
     def save_settings_btn(self):
         self.save_settings()
@@ -2696,25 +4225,19 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(20)
 
-        frame = GradientFrame()
-        frame.setStyleSheet("border-radius: 12px;")
-        frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(20, 20, 20, 20)
+        tap_frame = GradientFrame()
+        tap_frame.setStyleSheet("border-radius: 12px;")
+        tap_frame_layout = QVBoxLayout(tap_frame)
+        tap_frame_layout.setContentsMargins(20, 20, 20, 20)
         
-        title = QLabel("Hotkey Configuration")
-        title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0;")
-        if KEYBIND_SUPPORT == False:
-            warning_label = QLabel(" (Hotkey support is not available on this OS.)")
-            warning_label.setStyleSheet("font-size: 14px; color: #ff5555;")
-            title_layout = QHBoxLayout()
-            title_layout.addWidget(title)
-            title_layout.addWidget(warning_label)
-            frame_layout.addLayout(title_layout)
-        else:
-            frame_layout.addWidget(title)
-
-        hotkeys_layout = QVBoxLayout()
-        hotkeys_layout.setSpacing(15)
+        tap_title = QLabel("1-Tap Hotkeys")
+        tap_title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0;")
+        tap_frame_layout.addWidget(tap_title)
+        
+        tap_desc = QLabel("Executes the attached action once when the hotkey is pressed.")
+        tap_desc.setWordWrap(True)
+        tap_desc.setStyleSheet("font-size: 13px; color: #d0d0d0; margin-bottom: 12px;")
+        tap_frame_layout.addWidget(tap_desc)
 
         def create_hotkey_row(label_text, checkbox, key_label, key_value, duration_input=None):
             row_widget = QWidget()
@@ -2731,7 +4254,7 @@ class MainWindow(QMainWindow):
             if duration_input:
                 duration_layout = QHBoxLayout()
                 duration_layout.setSpacing(5)
-                duration_label = QLabel("Duration (s):")
+                duration_label = QLabel("Duration (in seconds):")
                 duration_label.setStyleSheet("font-size: 12px; color: #e0e0e0; margin-left: 10px;")
                 duration_layout.addWidget(duration_label)
                 duration_layout.addWidget(duration_input)
@@ -2779,14 +4302,14 @@ class MainWindow(QMainWindow):
             return row_widget, key_display, assign_btn
 
         self.hk1_cb = QCheckBox()
-        self.hk1_cb.setChecked(open_roblox_toggle)
+        self.hk1_cb.setChecked(CONFIG_DATA["open_roblox_toggle"])
         hk1_row, self.hk1_display, self.hk1_assign_btn = create_hotkey_row(
-            "Join Random Server", self.hk1_cb, "Key:", open_roblox_key
+            "Join Random Server", self.hk1_cb, "Key:", CONFIG_DATA["open_roblox"]
         )
-        hotkeys_layout.addWidget(hk1_row)
+        tap_frame_layout.addWidget(hk1_row)
 
         self.pause_duration_input = QLineEdit()
-        self.pause_duration_input.setText(str(pause_duration))
+        self.pause_duration_input.setText(str(CONFIG_DATA["pause_duration"]))
         self.pause_duration_input.setFixedSize(70, 30)
         self.pause_duration_input.setStyleSheet("""
             QLineEdit {
@@ -2801,20 +4324,23 @@ class MainWindow(QMainWindow):
         self.pause_duration_input.setValidator(QIntValidator(1, 3600))
 
         self.hk2_cb = QCheckBox()
-        self.hk2_cb.setChecked(stop_sniper_toggle)
+        self.hk2_cb.setChecked(CONFIG_DATA["stop_sniper_toggle"])
         hk2_row, self.hk2_display, self.hk2_assign_btn = create_hotkey_row(
-            "Pause Sniper", self.hk2_cb, "Key:", stop_sniper_key, self.pause_duration_input
+            "Pause Sniper", self.hk2_cb, "Key:", CONFIG_DATA["stop_sniper"], self.pause_duration_input
         )
-        hotkeys_layout.addWidget(hk2_row)
+        tap_frame_layout.addWidget(hk2_row)
 
         self.hk3_cb = QCheckBox()
-        self.hk3_cb.setChecked(toggle_sniper_toggle)
+        self.hk3_cb.setChecked(CONFIG_DATA["toggle_sniper_toggle"])
         hk3_row, self.hk3_display, self.hk3_assign_btn = create_hotkey_row(
-            "Toggle Sniper", self.hk3_cb, "Key:", toggle_sniper_key
+            "Toggle Sniper (Will Resume Sniping if Paused)", self.hk3_cb, "Key:", CONFIG_DATA["toggle_sniper"]
         )
-        hotkeys_layout.addWidget(hk3_row)
+        tap_frame_layout.addWidget(hk3_row)
 
         if KEYBIND_SUPPORT == False:
+            tap_warning = QLabel("(Hotkey support is not available on this OS.)")
+            tap_warning.setStyleSheet("font-size: 12px; color: #ff5555; margin-top: 10px;")
+            tap_frame_layout.addWidget(tap_warning)
             self.hk1_cb.setEnabled(False)
             self.hk1_assign_btn.setEnabled(False)
             self.hk2_cb.setEnabled(False)
@@ -2823,47 +4349,54 @@ class MainWindow(QMainWindow):
             self.hk3_cb.setEnabled(False)
             self.hk3_assign_btn.setEnabled(False)
 
-        frame_layout.addLayout(hotkeys_layout)
+        layout.addWidget(tap_frame)
+
+        hold_frame = GradientFrame()
+        hold_frame.setStyleSheet("border-radius: 12px;")
+        hold_frame_layout = QVBoxLayout(hold_frame)
+        hold_frame_layout.setContentsMargins(20, 20, 20, 20)
+        
+        hold_title = QLabel("Hold Hotkeys")
+        hold_title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0;")
+        hold_frame_layout.addWidget(hold_title)
+        
+        hold_desc = QLabel("Executes the attached action continuously while the hotkey is held down.\nThese keys are required to be held down to execute their function properly.")
+        hold_desc.setWordWrap(True)
+        hold_desc.setStyleSheet("font-size: 13px; color: #d0d0d0; margin-bottom: 12px;")
+        hold_frame_layout.addWidget(hold_desc)
+
+        self.hk4_cb = QCheckBox()
+        self.hk4_cb.setChecked(CONFIG_DATA["loading_asset_skipper_toggle"])
+        hk4_row, self.hk4_display, self.hk4_assign_btn = create_hotkey_row(
+            "Loading Asset Skipper", self.hk4_cb, "Key:", CONFIG_DATA["loading_asset_skipper"]
+        )
+        hold_frame_layout.addWidget(hk4_row)
+
+        self.hk5_cb = QCheckBox()
+        self.hk5_cb.setChecked(CONFIG_DATA["main_menu_skipper_toggle"])
+        hk5_row, self.hk5_display, self.hk5_assign_btn = create_hotkey_row(
+            "Play Button Skipper", self.hk5_cb, "Key:", CONFIG_DATA["main_menu_skipper"]
+        )
+        hold_frame_layout.addWidget(hk5_row)
+
+        if KEYBIND_SUPPORT == False:
+            hold_warning = QLabel("(Hotkey support is not available on this OS.)")
+            hold_warning.setStyleSheet("font-size: 12px; color: #ff5555; margin-top: 10px;")
+            hold_frame_layout.addWidget(hold_warning)
+            self.hk4_cb.setEnabled(False)
+            self.hk4_assign_btn.setEnabled(False)
+            self.hk5_cb.setEnabled(False)
+            self.hk5_assign_btn.setEnabled(False)
+
+        layout.addWidget(hold_frame)
 
         self.assigning_hotkey = None
         self.hk1_assign_btn.clicked.connect(lambda: self.start_key_assignment(1))
         self.hk2_assign_btn.clicked.connect(lambda: self.start_key_assignment(2))
         self.hk3_assign_btn.clicked.connect(lambda: self.start_key_assignment(3))
+        self.hk4_assign_btn.clicked.connect(lambda: self.start_key_assignment(4))
+        self.hk5_assign_btn.clicked.connect(lambda: self.start_key_assignment(5))
 
-        self.save_btn = QPushButton("Save Settings")
-        self.save_btn.setFixedHeight(45)
-        if gradient_theme == True:
-            self.save_btn.setStyleSheet("""
-                QPushButton {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4a7bff, stop:1 #8a4caf);
-                    color: white;
-                    font-weight: 500;
-                    font-size: 16px;
-                    border-radius: 8px;
-                }
-                QPushButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #5a8bff, stop:1 #9a5cbf);
-                }
-            """)
-        else:
-            self.save_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #8a4caf;
-                    color: white;
-                    font-weight: 500;
-                    font-size: 16px;
-                    border-radius: 8px;
-                }
-                QPushButton:hover {
-                    background-color: #9a5cbf;
-                }
-            """)
-        self.save_btn.clicked.connect(self.save_settings_btn)
-        frame_layout.addWidget(self.save_btn)
-        
-        layout.addWidget(frame)
         layout.addStretch()
         return tab
 
@@ -2923,7 +4456,39 @@ class MainWindow(QMainWindow):
             """)
             self.hk3_assign_btn.setText("Listening...")
             self.hk3_assign_btn.setEnabled(False)
-        
+        elif hotkey_number == 4:
+            self.hk4_display.setText("Press any key...")
+            self.hk4_display.setStyleSheet("""
+                QLabel {
+                    background-color: #4a7bff;
+                    border: 1px solid #5a8bff;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-size: 14px;
+                    color: white;
+                    min-width: 60px;
+                    text-align: center;
+                }
+            """)
+            self.hk4_assign_btn.setText("Listening...")
+            self.hk4_assign_btn.setEnabled(False)
+        elif hotkey_number == 5:
+            self.hk5_display.setText("Press any key...")
+            self.hk5_display.setStyleSheet("""
+                QLabel {
+                    background-color: #4a7bff;
+                    border: 1px solid #5a8bff;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    font-size: 14px;
+                    color: white;
+                    min-width: 60px;
+                    text-align: center;
+                }
+            """)
+            self.hk5_assign_btn.setText("Listening...")
+            self.hk5_assign_btn.setEnabled(False)
+
         self.installEventFilter(self)
 
     def eventFilter(self, obj, event):
@@ -2944,29 +4509,87 @@ class MainWindow(QMainWindow):
 
     def qt_key_to_keyboard_format(self, key, modifiers):
         key_map = {
+            # function keys
             Qt.Key.Key_F1: "f1", Qt.Key.Key_F2: "f2", Qt.Key.Key_F3: "f3",
             Qt.Key.Key_F4: "f4", Qt.Key.Key_F5: "f5", Qt.Key.Key_F6: "f6",
             Qt.Key.Key_F7: "f7", Qt.Key.Key_F8: "f8", Qt.Key.Key_F9: "f9",
             Qt.Key.Key_F10: "f10", Qt.Key.Key_F11: "f11", Qt.Key.Key_F12: "f12",
-            Qt.Key.Key_Space: "space", Qt.Key.Key_Tab: "tab",
-            Qt.Key.Key_Backspace: "backspace", Qt.Key.Key_Return: "enter",
-            Qt.Key.Key_Enter: "enter", Qt.Key.Key_Escape: "esc",
-            Qt.Key.Key_Delete: "delete", Qt.Key.Key_Insert: "insert",
-            Qt.Key.Key_Home: "home", Qt.Key.Key_End: "end",
-            Qt.Key.Key_PageUp: "page up", Qt.Key.Key_PageDown: "page down",
-            Qt.Key.Key_Up: "up", Qt.Key.Key_Down: "down",
-            Qt.Key.Key_Left: "left", Qt.Key.Key_Right: "right",
+            Qt.Key.Key_F13: "f13", Qt.Key.Key_F14: "f14", Qt.Key.Key_F15: "f15",
+
+            # whitespace/navigation
+            Qt.Key.Key_Space: "space",
+            Qt.Key.Key_Tab: "tab",
+            Qt.Key.Key_Backspace: "backspace",
+            Qt.Key.Key_Return: "enter",
+            Qt.Key.Key_Enter: "enter",
+            Qt.Key.Key_Escape: "esc",
+            Qt.Key.Key_Delete: "delete",
+            Qt.Key.Key_Insert: "insert",
+            Qt.Key.Key_Home: "home",
+            Qt.Key.Key_End: "end",
+            Qt.Key.Key_PageUp: "page up",
+            Qt.Key.Key_PageDown: "page down",
+            Qt.Key.Key_Up: "up",
+            Qt.Key.Key_Down: "down",
+            Qt.Key.Key_Left: "left",
+            Qt.Key.Key_Right: "right",
+            Qt.Key.Key_CapsLock: "caps lock",
+            Qt.Key.Key_NumLock: "num lock",
+            Qt.Key.Key_ScrollLock: "scroll lock",
+            Qt.Key.Key_Print: "print screen",
+            Qt.Key.Key_Pause: "pause",
+
+            # punctuation/unshifted
+            Qt.Key.Key_Minus: "-",
+            Qt.Key.Key_Underscore: "-",  # same physical key
+            Qt.Key.Key_Equal: "=",
+            Qt.Key.Key_Plus: "=",  # this one is the same physical key as well
+            Qt.Key.Key_BracketLeft: "[",
+            Qt.Key.Key_BracketRight: "]",
+            Qt.Key.Key_Backslash: "\\",
+            Qt.Key.Key_Semicolon: ";",
+            Qt.Key.Key_Apostrophe: "'",
+            Qt.Key.Key_Comma: ",",
+            Qt.Key.Key_Period: ".",
+            Qt.Key.Key_Slash: "/",
+            Qt.Key.Key_QuoteLeft: "`",
+
+            # numpad keys (common names)
+            Qt.Key.Key_0: "0", Qt.Key.Key_1: "1", Qt.Key.Key_2: "2",
+            Qt.Key.Key_3: "3", Qt.Key.Key_4: "4", Qt.Key.Key_5: "5",
+            Qt.Key.Key_6: "6", Qt.Key.Key_7: "7", Qt.Key.Key_8: "8",
+            Qt.Key.Key_9: "9",
+            
+            Qt.Key.Key_Asterisk: "*",
+            Qt.Key.Key_Plus: "+",
+            Qt.Key.Key_Minus: "-",
+            Qt.Key.Key_Slash: "/",
+            Qt.Key.Key_Period: ".",
+
+            # extra named keys
+            Qt.Key.Key_Meta: "meta",
+            Qt.Key.Key_Control: "ctrl",
+            Qt.Key.Key_Alt: "alt",
+            Qt.Key.Key_Shift: "shift",
+            Qt.Key.Key_Menu: "menu",
         }
-        
+
         if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
-            key_name = chr(key).lower()
+            base = chr(key).lower()
         elif Qt.Key.Key_0 <= key <= Qt.Key.Key_9:
-            key_name = chr(key)
+            base = chr(key)
         elif key in key_map:
-            key_name = key_map[key]
+            base = key_map[key]
         else:
-            return None
-        
+            try:
+                ch = chr(key)
+                if 32 <= ord(ch) <= 126:
+                    base = ch.lower()
+                else:
+                    return None
+            except Exception:
+                return None
+
         modifier_parts = []
         if modifiers & Qt.KeyboardModifier.ControlModifier:
             modifier_parts.append("ctrl")
@@ -2976,11 +4599,24 @@ class MainWindow(QMainWindow):
             modifier_parts.append("shift")
         if modifiers & Qt.KeyboardModifier.MetaModifier:
             modifier_parts.append("windows")
-        
+
+        normalization = {
+            "enter": "enter",
+            "esc": "esc",
+            "space": "space",
+            "tab": "tab",
+            "backspace": "backspace",
+            "`": "`",
+            "'" : "'",
+            '"' : "'",
+            "\\" : "\\",
+        }
+        base = normalization.get(base, base)
+
         if modifier_parts:
-            return "+".join(modifier_parts + [key_name])
+            return "+".join(modifier_parts + [str(base)])
         else:
-            return key_name
+            return str(base)
         
     def set_processing_hotkey_assignment(self, value):
         global processing_hotkey_assignment
@@ -2994,7 +4630,7 @@ class MainWindow(QMainWindow):
 
         hotkey_number = self.assigning_hotkey
         
-        global open_roblox_key, stop_sniper_key, toggle_sniper_key
+        global open_roblox_key, stop_sniper_key, toggle_sniper_key, loading_asset_skipper_key, main_menu_skipper_key
         
         if key:
             if hotkey_number == 1:
@@ -3006,6 +4642,12 @@ class MainWindow(QMainWindow):
             elif hotkey_number == 3:
                 toggle_sniper_key = key
                 self.hk3_display.setText(str(key))
+            elif hotkey_number == 4:
+                loading_asset_skipper_key = key
+                self.hk4_display.setText(str(key))
+            elif hotkey_number == 5:
+                main_menu_skipper_key = key
+                self.hk5_display.setText(str(key))
         else:
             if hotkey_number == 1:
                 self.hk1_display.setText(str(open_roblox_key))
@@ -3013,14 +4655,22 @@ class MainWindow(QMainWindow):
                 self.hk2_display.setText(str(stop_sniper_key))
             elif hotkey_number == 3:
                 self.hk3_display.setText(str(toggle_sniper_key))
-        
+            elif hotkey_number == 4:
+                self.hk4_display.setText(str(loading_asset_skipper_key))
+            elif hotkey_number == 5:
+                self.hk5_display.setText(str(main_menu_skipper_key))
+
         self.hk1_assign_btn.setText("Assign")
         self.hk1_assign_btn.setEnabled(True)
         self.hk2_assign_btn.setText("Assign")
         self.hk2_assign_btn.setEnabled(True)
         self.hk3_assign_btn.setText("Assign")
         self.hk3_assign_btn.setEnabled(True)
-        
+        self.hk4_assign_btn.setText("Assign")
+        self.hk4_assign_btn.setEnabled(True)
+        self.hk5_assign_btn.setText("Assign")
+        self.hk5_assign_btn.setEnabled(True)
+
         normal_style = """
             QLabel {
                 background-color: #2d2d2d;
@@ -3036,6 +4686,8 @@ class MainWindow(QMainWindow):
         self.hk1_display.setStyleSheet(normal_style)
         self.hk2_display.setStyleSheet(normal_style)
         self.hk3_display.setStyleSheet(normal_style)
+        self.hk4_display.setStyleSheet(normal_style)
+        self.hk5_display.setStyleSheet(normal_style)
         
         self.assigning_hotkey = None
         self.removeEventFilter(self)
@@ -3075,7 +4727,7 @@ class MainWindow(QMainWindow):
         custom_cat_title_layout.addStretch()
         self.add_custom_cat_btn = QPushButton("+ Add Custom Category")
         self.add_custom_cat_btn.setFixedSize(266, 30)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.add_custom_cat_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -3143,7 +4795,7 @@ class MainWindow(QMainWindow):
         title_layout.addStretch()
         self.plus_btn = QPushButton("+ Add Keyword")
         self.plus_btn.setFixedSize(180, 30)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.plus_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -3175,7 +4827,7 @@ class MainWindow(QMainWindow):
 
         self.keyword_table = QTableWidget()
         self.keyword_table.setColumnCount(4)
-        self.keyword_table.setHorizontalHeaderLabels(["Glitched", "Dreamspace", "Jester", "Void Coin"])
+        self.keyword_table.setHorizontalHeaderLabels(["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"])
         self.keyword_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.keyword_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.keyword_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3214,7 +4866,7 @@ class MainWindow(QMainWindow):
 
         scroll_layout.addWidget(kw_frame)
 
-        if advanced_mode == True:
+        if CONFIG_DATA["advanced_mode"] == True:
             regex_frame = GradientFrame()
             regex_frame.setStyleSheet("border-radius: 12px;")
             regex_frame_layout = QVBoxLayout(regex_frame)
@@ -3228,7 +4880,7 @@ class MainWindow(QMainWindow):
             regex_title_layout.addStretch()
             self.regex_plus_btn = QPushButton("+ Add RegEx")
             self.regex_plus_btn.setFixedSize(156, 30)
-            if gradient_theme == True:
+            if CONFIG_DATA["gradient_theme"] == True:
                 self.regex_plus_btn.setStyleSheet("""
                     QPushButton {
                         background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -3260,7 +4912,7 @@ class MainWindow(QMainWindow):
 
             self.regex_table = QTableWidget()
             self.regex_table.setColumnCount(4)
-            self.regex_table.setHorizontalHeaderLabels(["Glitched", "Dreamspace", "Jester", "Void Coin"])
+            self.regex_table.setHorizontalHeaderLabels(["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"])
             self.regex_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
             self.regex_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
             self.regex_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3313,7 +4965,7 @@ class MainWindow(QMainWindow):
         bl_title_layout.addStretch()
         self.bl_plus_btn = QPushButton("+ Add Blacklist")
         self.bl_plus_btn.setFixedSize(180, 30)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.bl_plus_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -3345,7 +4997,7 @@ class MainWindow(QMainWindow):
 
         self.blacklist_table = QTableWidget()
         self.blacklist_table.setColumnCount(5)
-        self.blacklist_table.setHorizontalHeaderLabels(["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"])
+        self.blacklist_table.setHorizontalHeaderLabels(["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"])
         self.blacklist_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.blacklist_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.blacklist_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -3397,7 +5049,7 @@ class MainWindow(QMainWindow):
         category_combo = QComboBox()
         
         data = self.get_current_keyword_data()
-        base_categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = data.get("custom_categories", [])
         
         category_combo.addItems(base_categories + custom_categories)
@@ -3438,7 +5090,7 @@ class MainWindow(QMainWindow):
         category_combo = QComboBox()
         
         data = self.get_current_keyword_data()
-        base_categories = ["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = data.get("custom_categories", [])
         
         category_combo.addItems(base_categories + custom_categories)
@@ -3475,7 +5127,7 @@ class MainWindow(QMainWindow):
             return
             
         data = self.get_current_keyword_data()
-        base_categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = data.get("custom_categories", [])
         all_categories = base_categories + custom_categories
         
@@ -3494,7 +5146,7 @@ class MainWindow(QMainWindow):
             return
             
         data = self.get_current_keyword_data()
-        base_categories = ["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = data.get("custom_categories", [])
         all_categories = base_categories + custom_categories
         
@@ -3540,15 +5192,25 @@ class MainWindow(QMainWindow):
                 data["custom_categories"] = []
             data["custom_categories"].append(category)
             
+            with open(KEYWORDS_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+            
             self.rebuild_tables_from_data(data)
             self.update_custom_cat_list(data)
             self.refresh_custom_categories()
+            
+            setting_name = f"customcat_{category.replace(' ', '_')}"
+            if setting_name not in CONFIG_DATA:
+                CONFIG_DATA[setting_name] = False
+            self.save_settings()
 
     def refresh_custom_categories(self):
         if hasattr(self, 'custom_category_checkboxes'):
             for checkbox in self.custom_category_checkboxes.values():
-                if checkbox.parent():
-                    checkbox.parent().layout().removeWidget(checkbox)
+                if checkbox and checkbox.parent():
+                    parent_widget = checkbox.parent()
+                    if parent_widget and parent_widget.layout():
+                        parent_widget.layout().removeWidget(checkbox)
                     checkbox.deleteLater()
             self.custom_category_checkboxes.clear()
         
@@ -3560,56 +5222,106 @@ class MainWindow(QMainWindow):
                     custom_categories = keywords_data.get("custom_categories", [])
             except:
                 pass
-        
-        sniper_widget = self.sniper_tab.widget()
-        form_layout = None
-        for i in range(sniper_widget.layout().count()):
-            item = sniper_widget.layout().itemAt(i)
-            if isinstance(item.widget(), GradientFrame):
-                frame = item.widget()
-                for j in range(frame.layout().count()):
-                    frame_item = frame.layout().itemAt(j)
-                    if isinstance(frame_item, QVBoxLayout):
-                        form_layout = frame_item
-                        break
-                if form_layout:
-                    break
 
-        def add_checkbox_row(label_text, checkbox):
-            row_widget = QWidget()
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(3)
-            row_layout.addWidget(checkbox)
-            label = QLabel(label_text)
-            label.setStyleSheet("font-size: 16px; color: #e0e0e0; margin-left: 4px;")
-            row_layout.addWidget(label)
-            row_layout.addStretch()
-            return row_widget
+        if not custom_categories:
+            self.remove_custom_categories_frame()
+            return
+
+        custom_cat_frame = None
+        scroll_area = self.sniper_tab.findChild(QScrollArea)
+        if scroll_area:
+            scroll_content = scroll_area.widget()
+            if scroll_content:
+                for i in range(scroll_content.layout().count()):
+                    item = scroll_content.layout().itemAt(i)
+                    if item and item.widget() and isinstance(item.widget(), GradientFrame):
+                        frame = item.widget()
+                        for j in range(frame.layout().count()):
+                            frame_item = frame.layout().itemAt(j)
+                            if (frame_item and frame_item.widget() and 
+                                isinstance(frame_item.widget(), QLabel) and 
+                                "Custom Categories" in frame_item.widget().text()):
+                                custom_cat_frame = frame
+                                break
+                        if custom_cat_frame:
+                            break
         
-        if form_layout and custom_categories:
-            for i in range(form_layout.count()):
-                item = form_layout.itemAt(i)
-                if item and item.widget() and isinstance(item.widget(), QLabel) and item.widget().text() == "Custom Categories":
-                    form_layout.removeItem(item)
-                    item.widget().deleteLater()
-                    break
+        if not custom_cat_frame and custom_categories:
+            custom_cat_frame = self.create_custom_categories_frame()
+            scroll_area = self.sniper_tab.findChild(QScrollArea)
+            if scroll_area:
+                scroll_content = scroll_area.widget()
+                if scroll_content:
+                    base_cat_frame_index = -1
+                    for i in range(scroll_content.layout().count()):
+                        item = scroll_content.layout().itemAt(i)
+                        if item and item.widget() and isinstance(item.widget(), GradientFrame):
+                            frame = item.widget()
+                            for j in range(frame.layout().count()):
+                                frame_item = frame.layout().itemAt(j)
+                                if (frame_item and frame_item.widget() and 
+                                    isinstance(frame_item.widget(), QLabel) and 
+                                    "Base Categories" in frame_item.widget().text()):
+                                    base_cat_frame_index = i
+                                    break
+                            if base_cat_frame_index != -1:
+                                break
+                    
+                    if base_cat_frame_index != -1:
+                        scroll_content.layout().insertWidget(base_cat_frame_index + 1, custom_cat_frame)
+                    else:
+                        scroll_content.layout().insertWidget(0, custom_cat_frame)
+
+        if custom_cat_frame and custom_categories:
+            layout = custom_cat_frame.layout()
+            
+            items_to_remove = []
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item and item.widget():
+                    widget = item.widget()
+                    if (isinstance(widget, QLabel) and widget.text() == "Custom Categories") or \
+                    (isinstance(widget, QWidget) and widget.findChild(QCheckBox)):
+                        items_to_remove.append(widget)
+            
+            for widget in items_to_remove:
+                layout.removeWidget(widget)
+                widget.deleteLater()
             
             custom_categories_label = QLabel("Custom Categories")
-            custom_categories_label.setStyleSheet("font-size: 18px; font-weight: 600; color: #e0e0e0; margin-top: 20px; margin-bottom: 5px;")
-            form_layout.insertWidget(5, custom_categories_label)
-
-            for i, category in enumerate(custom_categories):
+            custom_categories_label.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0; margin-bottom: 15px;")
+            layout.addWidget(custom_categories_label)
+            
+            for category in custom_categories:
                 checkbox = QCheckBox()
-                checkbox.setChecked(globals().get(f"customcat_{category.replace(' ', '_')}", False))
+                setting_name = f"customcat_{category.replace(' ', '_')}"
+                checkbox.setChecked(CONFIG_DATA.get(setting_name, False))
                 checkbox.stateChanged.connect(lambda state, cat=category: self.update_custom_category_setting(cat, state))
                 self.custom_category_checkboxes[category] = checkbox
-                row_widget = add_checkbox_row(category, checkbox)
-                form_layout.insertWidget(6 + i, row_widget)
+                
+                row_widget = QWidget()
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(3)
+                row_layout.addWidget(checkbox)
+                
+                label = QLabel(category)
+                label.setStyleSheet("font-size: 16px; color: #e0e0e0; margin-left: 4px;")
+                row_layout.addWidget(label)
+                row_layout.addStretch()
+                
+                layout.addWidget(row_widget)
+
+    def create_custom_categories_frame(self):
+        custom_cat_frame = GradientFrame()
+        custom_cat_frame.setStyleSheet("border-radius: 12px;")
+        custom_cat_layout = QVBoxLayout(custom_cat_frame)
+        custom_cat_layout.setContentsMargins(20, 20, 20, 20)
+        return custom_cat_frame
 
     def update_custom_category_setting(self, category, state):
         setting_name = f"customcat_{category.replace(' ', '_')}"
-        globals()[setting_name] = (state == Qt.CheckState.Checked.value)
+        CONFIG_DATA[setting_name] = (state == Qt.CheckState.Checked.value)
         self.save_settings()
 
     def update_custom_cat_list(self, data):
@@ -3627,20 +5339,26 @@ class MainWindow(QMainWindow):
             label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             layout.addWidget(label)
             
-            remove_btn = QPushButton("-")
-            remove_btn.setFixedSize(20, 20)
+            remove_btn = QPushButton()
+            remove_btn.setFixedSize(24, 24)
             remove_btn.setStyleSheet("""
                 QPushButton {
-                    background: #ff5555;
-                    color: white;
-                    border-radius: 10px;
-                    font-weight: bold;
+                    background-color: #ff5555;
+                    border-radius: 6px;
+                    border: none;
                 }
                 QPushButton:hover {
-                    background: #ff8888;
+                    background-color: #ff8888;
                 }
             """)
-            remove_btn.clicked.connect(lambda: self.remove_custom_category(category))
+            remove_svg = QSvgWidget(remove_btn)
+            remove_svg.load(QByteArray(b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#fff" viewBox="0 0 16 16">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+            </svg>"""))
+            remove_svg.setFixedSize(12, 12)
+            remove_svg.move(6, 6)
+            remove_btn.clicked.connect(lambda checked, cat=category: self.remove_custom_category(cat))
             layout.addWidget(remove_btn, alignment=Qt.AlignmentFlag.AlignRight)
             
             item.setSizeHint(QSize(0, 36))
@@ -3659,9 +5377,40 @@ class MainWindow(QMainWindow):
             if category in data.get("regex", {}):
                 del data["regex"][category]
             
+            with open(KEYWORDS_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+            
+            setting_name = f"customcat_{category.replace(' ', '_')}"
+            if setting_name in CONFIG_DATA:
+                del CONFIG_DATA[setting_name]
+            
+            self.save_settings()
+            
             self.rebuild_tables_from_data(data)
             self.update_custom_cat_list(data)
             self.refresh_custom_categories()
+            
+            if not data.get("custom_categories", []):
+                self.remove_custom_categories_frame()
+
+    def remove_custom_categories_frame(self):
+        sniper_tab = self.sniper_tab
+        scroll_area = sniper_tab.findChild(QScrollArea)
+        if scroll_area:
+            scroll_content = scroll_area.widget()
+            if scroll_content:
+                for i in range(scroll_content.layout().count()):
+                    item = scroll_content.layout().itemAt(i)
+                    if item and item.widget() and isinstance(item.widget(), GradientFrame):
+                        frame = item.widget()
+                        for j in range(frame.layout().count()):
+                            frame_item = frame.layout().itemAt(j)
+                            if (frame_item and frame_item.widget() and 
+                                isinstance(frame_item.widget(), QLabel) and 
+                                "Custom Categories" in frame_item.widget().text()):
+                                scroll_content.layout().removeWidget(frame)
+                                frame.deleteLater()
+                                return
 
     def show_add_regex_dialog(self):
         dlg = QDialog(self)
@@ -3673,7 +5422,7 @@ class MainWindow(QMainWindow):
         form = QFormLayout()
         category_combo = QComboBox()
         data = self.get_current_keyword_data()
-        base_categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = data.get("custom_categories", [])
         categories = base_categories + custom_categories
         
@@ -3738,7 +5487,7 @@ class MainWindow(QMainWindow):
         self.rebuild_tables_from_data(data)
 
     def add_regex_to_table_cell(self, category, pattern, flags):
-        base_categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = self.get_current_keyword_data().get("custom_categories", [])
         all_categories = base_categories + custom_categories
         
@@ -3748,6 +5497,9 @@ class MainWindow(QMainWindow):
         col = all_categories.index(category)
         
         widget = QWidget()
+        widget.setProperty("pattern", pattern)
+        widget.setProperty("flags", flags)
+        
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(6)
@@ -3760,13 +5512,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(pattern_label)
         
         edit_btn = QPushButton()
-        edit_btn.setFixedSize(20, 20)
+        edit_btn.setFixedSize(24, 24)
         edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         edit_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4a7bff;
-                border-radius: 10px; /* perfect circle */
-                padding: 0px;
+                border-radius: 6px;
+                border: none;
             }
             QPushButton:hover {
                 background-color: #5a8bff;
@@ -3775,9 +5527,8 @@ class MainWindow(QMainWindow):
 
         svg = QSvgWidget(edit_btn)
         svg.load(QByteArray(EDIT_SVG))
-        svg.setFixedSize(10, 10)
-        svg.move((20 - 10) // 2, (20 - 10) // 2)
-
+        svg.setFixedSize(12, 12)
+        svg.move(6, 6)
         edit_btn.clicked.connect(lambda: self.edit_regex(category))
         layout.addWidget(edit_btn, alignment=Qt.AlignmentFlag.AlignRight)
         
@@ -3834,7 +5585,7 @@ class MainWindow(QMainWindow):
             self.add_regex_to_table(category, pattern, flags)
 
     def update_table_headers_for_custom_categories(self, data):
-        base_categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = data.get("custom_categories", [])
         all_categories = base_categories + custom_categories
         
@@ -3847,11 +5598,12 @@ class MainWindow(QMainWindow):
         elif needed_columns < current_columns:
             for i in range(current_columns - 1, needed_columns - 1, -1):
                 self.keyword_table.removeColumn(i)
-        
+    
         for col, category in enumerate(all_categories):
-            self.keyword_table.setHorizontalHeaderItem(col, QTableWidgetItem(category))
+            if col < self.keyword_table.columnCount():
+                self.keyword_table.setHorizontalHeaderItem(col, QTableWidgetItem(category))
 
-        if advanced_mode and hasattr(self, 'regex_table'):
+        if CONFIG_DATA["advanced_mode"] and hasattr(self, 'regex_table'):
             current_regex_columns = self.regex_table.columnCount()
             needed_regex_columns = len(all_categories)
             
@@ -3863,9 +5615,10 @@ class MainWindow(QMainWindow):
                     self.regex_table.removeColumn(i)
             
             for col, category in enumerate(all_categories):
-                self.regex_table.setHorizontalHeaderItem(col, QTableWidgetItem(category))
+                if col < self.regex_table.columnCount():
+                    self.regex_table.setHorizontalHeaderItem(col, QTableWidgetItem(category))
         
-        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"]
+        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         bl_all_categories = bl_base_categories + custom_categories
         
         current_bl_columns = self.blacklist_table.columnCount()
@@ -3879,22 +5632,29 @@ class MainWindow(QMainWindow):
                 self.blacklist_table.removeColumn(i)
         
         for col, category in enumerate(bl_all_categories):
-            self.blacklist_table.setHorizontalHeaderItem(col, QTableWidgetItem(category))
+            if col < self.blacklist_table.columnCount():
+                self.blacklist_table.setHorizontalHeaderItem(col, QTableWidgetItem(category))
 
     def rebuild_tables_from_data(self, data):
         self.update_table_headers_for_custom_categories(data)
+        
         self.keyword_table.setRowCount(0)
-        base_categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         custom_categories = data.get("custom_categories", [])
         all_categories = base_categories + custom_categories
         
-        max_rows = max(len(data["keywords"].get(cat, [])) for cat in all_categories)
+        max_rows = 0
+        for cat in all_categories:
+            max_rows = max(max_rows, len(data["keywords"].get(cat, [])))
+        
         if max_rows > 0:
             self.keyword_table.setRowCount(max_rows)
         
+        while self.keyword_table.columnCount() < len(all_categories):
+            self.keyword_table.insertColumn(self.keyword_table.columnCount())
+        
         for col, cat in enumerate(all_categories):
-            if col >= self.keyword_table.columnCount():
-                self.keyword_table.insertColumn(col)
+            if col < self.keyword_table.columnCount():
                 self.keyword_table.setHorizontalHeaderItem(col, QTableWidgetItem(cat))
             
             keywords = data["keywords"].get(cat, [])
@@ -3904,16 +5664,21 @@ class MainWindow(QMainWindow):
                 self.add_keyword_to_table_cell(row, col, kw)
         
         self.blacklist_table.setRowCount(0)
-        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"]
+        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         bl_all_categories = bl_base_categories + custom_categories
         
-        max_rows = max(len(data["blacklist"].get(cat, [])) for cat in bl_all_categories)
+        max_rows = 0
+        for cat in bl_all_categories:
+            max_rows = max(max_rows, len(data["blacklist"].get(cat, [])))
+        
         if max_rows > 0:
             self.blacklist_table.setRowCount(max_rows)
         
+        while self.blacklist_table.columnCount() < len(bl_all_categories):
+            self.blacklist_table.insertColumn(self.blacklist_table.columnCount())
+        
         for col, cat in enumerate(bl_all_categories):
-            if col >= self.blacklist_table.columnCount():
-                self.blacklist_table.insertColumn(col)
+            if col < self.blacklist_table.columnCount():
                 self.blacklist_table.setHorizontalHeaderItem(col, QTableWidgetItem(cat))
             
             keywords = data["blacklist"].get(cat, [])
@@ -3922,20 +5687,24 @@ class MainWindow(QMainWindow):
                     self.blacklist_table.insertRow(row)
                 self.add_blacklist_to_table_cell(row, col, kw)
         
-        if advanced_mode and hasattr(self, 'regex_table'):
+        if CONFIG_DATA["advanced_mode"] and hasattr(self, 'regex_table'):
             self.regex_table.setRowCount(0)
             self.regex_table.setRowCount(1)
             
-            if len(all_categories) != self.regex_table.columnCount():
-                self.regex_table.setColumnCount(len(all_categories))
-                self.regex_table.setHorizontalHeaderLabels(all_categories)
+            while self.regex_table.columnCount() < len(all_categories):
+                self.regex_table.insertColumn(self.regex_table.columnCount())
             
             for col, cat in enumerate(all_categories):
+                if col < self.regex_table.columnCount():
+                    self.regex_table.setHorizontalHeaderItem(col, QTableWidgetItem(cat))
+                
                 regex_data = data.get("regex", {}).get(cat, {})
                 if regex_data:
                     self.add_regex_to_table_cell(cat, regex_data.get("pattern", ""), regex_data.get("flags", []))
                 else:
-                    self.regex_table.setCellWidget(0, col, None)
+                    widget = self.regex_table.cellWidget(0, col)
+                    if widget:
+                        self.regex_table.removeCellWidget(0, col)
         
         if hasattr(self, 'custom_cat_list'):
             self.update_custom_cat_list(data)
@@ -3943,32 +5712,70 @@ class MainWindow(QMainWindow):
         self.save_keywords_data()
 
     def remove_keyword_from_table(self, row, col):
-        widget = self.keyword_table.cellWidget(row, col)
-        if widget:
-            self.keyword_table.removeCellWidget(row, col)
+        data = self.get_current_keyword_data()
         
-        self.rebuild_keyword_table()
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
+        custom_categories = data.get("custom_categories", [])
+        all_categories = base_categories + custom_categories
+        
+        if col < len(all_categories):
+            category = all_categories[col]
+            
+            widget = self.keyword_table.cellWidget(row, col)
+            if widget:
+                label = widget.findChild(QLabel)
+                if label:
+                    keyword_to_remove = label.text().strip()
+                    
+                    if category in data["keywords"] and keyword_to_remove in data["keywords"][category]:
+                        data["keywords"][category].remove(keyword_to_remove)
+                        
+                        with open(KEYWORDS_FILE, 'w') as f:
+                            json.dump(data, f, indent=4)
+                        
+                        self.rebuild_tables_from_data(data)
 
     def remove_blacklist_from_table(self, row, col):
-        widget = self.blacklist_table.cellWidget(row, col)
-        if widget:
-            self.blacklist_table.removeCellWidget(row, col)
+        data = self.get_current_keyword_data()
         
-        self.rebuild_blacklist_table()
+        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
+        custom_categories = data.get("custom_categories", [])
+        bl_all_categories = bl_base_categories + custom_categories
+        
+        if col < len(bl_all_categories):
+            category = bl_all_categories[col]
+            
+            widget = self.blacklist_table.cellWidget(row, col)
+            if widget:
+                label = widget.findChild(QLabel)
+                if label:
+                    keyword_to_remove = label.text().strip()
+                    
+                    if category in data["blacklist"] and keyword_to_remove in data["blacklist"][category]:
+                        data["blacklist"][category].remove(keyword_to_remove)
+                        
+                        with open(KEYWORDS_FILE, 'w') as f:
+                            json.dump(data, f, indent=4)
+                        
+                        self.rebuild_tables_from_data(data)
 
     def rebuild_keyword_table(self):
         data = self.get_current_keyword_data()
         
         self.keyword_table.setRowCount(0)
         
-        categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
+        custom_categories = data.get("custom_categories", [])
+        all_categories = base_categories + custom_categories
         
-        max_rows = max(len(data["keywords"].get(cat, [])) for cat in categories)
+        max_rows = 0
+        for cat in all_categories:
+            max_rows = max(max_rows, len(data["keywords"].get(cat, [])))
         
         if max_rows > 0:
             self.keyword_table.setRowCount(max_rows)
         
-        for col, cat in enumerate(categories):
+        for col, cat in enumerate(all_categories):
             keywords = data["keywords"].get(cat, [])
             for row, kw in enumerate(keywords):
                 if row >= self.keyword_table.rowCount():
@@ -3982,14 +5789,18 @@ class MainWindow(QMainWindow):
         
         self.blacklist_table.setRowCount(0)
         
-        categories = ["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"]
+        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
+        custom_categories = data.get("custom_categories", [])
+        bl_all_categories = bl_base_categories + custom_categories
         
-        max_rows = max(len(data["blacklist"].get(cat, [])) for cat in categories)
+        max_rows = 0
+        for cat in bl_all_categories:
+            max_rows = max(max_rows, len(data["blacklist"].get(cat, [])))
         
         if max_rows > 0:
             self.blacklist_table.setRowCount(max_rows)
         
-        for col, cat in enumerate(categories):
+        for col, cat in enumerate(bl_all_categories):
             keywords = data["blacklist"].get(cat, [])
             for row, kw in enumerate(keywords):
                 if row >= self.blacklist_table.rowCount():
@@ -4001,62 +5812,71 @@ class MainWindow(QMainWindow):
     def get_current_keyword_data(self):
         data = {"keywords": {}, "blacklist": {}, "regex": {}, "custom_categories": []}
         
-        base_categories = ["Glitched", "Dreamspace", "Jester", "Void Coin"]
-        custom_categories = []
+        if KEYWORDS_FILE.exists():
+            try:
+                with open(KEYWORDS_FILE, 'r') as f:
+                    data = json.load(f)
+            except:
+                pass
         
-        if hasattr(self, 'custom_cat_list'):
-            for i in range(self.custom_cat_list.count()):
-                item = self.custom_cat_list.item(i)
-                if item:
-                    widget = self.custom_cat_list.itemWidget(item)
-                    if widget:
-                        label = widget.findChild(QLabel)
-                        if label and label.text().strip():
-                            custom_categories.append(label.text().strip())
+        if "keywords" not in data:
+            data["keywords"] = {}
+        if "blacklist" not in data:
+            data["blacklist"] = {}
+        if "regex" not in data:
+            data["regex"] = {}
+        if "custom_categories" not in data:
+            data["custom_categories"] = []
         
+        base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
+        custom_categories = data.get("custom_categories", [])
         all_categories = base_categories + custom_categories
         
-        for col in range(self.keyword_table.columnCount()):
-            if col < len(all_categories):
-                cat = all_categories[col]
-                keywords = []
-                for row in range(self.keyword_table.rowCount()):
-                    widget = self.keyword_table.cellWidget(row, col)
-                    if widget:
-                        label = widget.findChild(QLabel)
-                        if label and label.text().strip():
-                            keywords.append(label.text().strip())
+        for col in range(min(self.keyword_table.columnCount(), len(all_categories))):
+            cat = all_categories[col]
+            keywords = []
+            for row in range(self.keyword_table.rowCount()):
+                widget = self.keyword_table.cellWidget(row, col)
+                if widget:
+                    label = widget.findChild(QLabel)
+                    if label and label.text().strip():
+                        keywords.append(label.text().strip())
+            if keywords or cat in base_categories:
                 data["keywords"][cat] = keywords
         
-        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Jester", "Void Coin"]
+        bl_base_categories = ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
         bl_all_categories = bl_base_categories + custom_categories
         
-        for col in range(self.blacklist_table.columnCount()):
-            if col < len(bl_all_categories):
-                cat = bl_all_categories[col]
-                keywords = []
-                for row in range(self.blacklist_table.rowCount()):
-                    widget = self.blacklist_table.cellWidget(row, col)
-                    if widget:
-                        label = widget.findChild(QLabel)
-                        if label and label.text().strip():
-                            keywords.append(label.text().strip())
+        for col in range(min(self.blacklist_table.columnCount(), len(bl_all_categories))):
+            cat = bl_all_categories[col]
+            keywords = []
+            for row in range(self.blacklist_table.rowCount()):
+                widget = self.blacklist_table.cellWidget(row, col)
+                if widget:
+                    label = widget.findChild(QLabel)
+                    if label and label.text().strip():
+                        keywords.append(label.text().strip())
+            if keywords or cat in bl_base_categories:
                 data["blacklist"][cat] = keywords
         
-        if advanced_mode and hasattr(self, 'regex_table'):
-            for col in range(self.regex_table.columnCount()):
-                if col < len(all_categories):
-                    cat = all_categories[col]
-                    widget = self.regex_table.cellWidget(0, col)
-                    if widget:
-                        pattern_label = widget.findChild(QLabel)
-                        if pattern_label and pattern_label.text().strip():
+        if hasattr(self, 'regex_table') and CONFIG_DATA["advanced_mode"]:
+            for col in range(min(self.regex_table.columnCount(), len(all_categories))):
+                cat = all_categories[col]
+                widget = self.regex_table.cellWidget(0, col)
+                if widget:
+                    pattern_label = widget.findChild(QLabel)
+                    if pattern_label:
+                        pattern = pattern_label.toolTip() if pattern_label.toolTip() else pattern_label.text()
+                        if pattern:
+                            flags = widget.property("flags")
+                            if flags is None:
+                                flags = []
                             data["regex"][cat] = {
-                                "pattern": pattern_label.toolTip(),
-                                "flags": []
+                                "pattern": pattern,
+                                "flags": flags
                             }
-        
-        data["custom_categories"] = custom_categories
+                elif cat in data["regex"]:
+                    pass
         
         return data
 
@@ -4073,19 +5893,25 @@ class MainWindow(QMainWindow):
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(label)
         
-        btn = QPushButton("-")
-        btn.setFixedSize(20, 20)
+        btn = QPushButton()
+        btn.setFixedSize(24, 24)
         btn.setStyleSheet("""
             QPushButton {
-                background: #ff5555;
-                color: white;
-                border-radius: 10px;
-                font-weight: bold;
+                background-color: #ff5555;
+                border-radius: 6px;
+                border: none;
             }
             QPushButton:hover {
-                background: #ff8888;
+                background-color: #ff8888;
             }
         """)
+        remove_svg = QSvgWidget(btn)
+        remove_svg.load(QByteArray(b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#fff" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+        </svg>"""))
+        remove_svg.setFixedSize(12, 12)
+        remove_svg.move(6, 6)
         btn.clicked.connect(lambda: self.remove_keyword_from_table(row, col))
         layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignRight)
         
@@ -4104,19 +5930,25 @@ class MainWindow(QMainWindow):
         label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(label)
         
-        btn = QPushButton("-")
-        btn.setFixedSize(20, 20)
+        btn = QPushButton()
+        btn.setFixedSize(24, 24)
         btn.setStyleSheet("""
             QPushButton {
-                background: #ff5555;
-                color: white;
-                border-radius: 10px;
-                font-weight: bold;
+                background-color: #ff5555;
+                border-radius: 6px;
+                border: none;
             }
             QPushButton:hover {
-                background: #ff8888;
+                background-color: #ff8888;
             }
         """)
+        remove_svg = QSvgWidget(btn)
+        remove_svg.load(QByteArray(b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#fff" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+        </svg>"""))
+        remove_svg.setFixedSize(12, 12)
+        remove_svg.move(6, 6)
         btn.clicked.connect(lambda: self.remove_blacklist_from_table(row, col))
         layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignRight)
         
@@ -4130,12 +5962,28 @@ class MainWindow(QMainWindow):
                     data = json.load(f)
                     logging.info(f"Keywords file loaded with {len(data.get('custom_categories', []))} custom categories")
                     
+                    if "keywords" not in data:
+                        data["keywords"] = {}
+                    if "blacklist" not in data:
+                        data["blacklist"] = {}
+                    if "regex" not in data:
+                        data["regex"] = {}
+                    if "custom_categories" not in data:
+                        data["custom_categories"] = []
+                    
+                    base_categories = ["Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"]
+                    for cat in base_categories:
+                        if cat not in data["keywords"]:
+                            data["keywords"][cat] = []
+                        if cat not in data["blacklist"]:
+                            data["blacklist"][cat] = []
+                    
+                    if "Global" not in data["blacklist"]:
+                        data["blacklist"]["Global"] = []
+                    
                     if "regex" in data:
                         for category, regex_data in data["regex"].items():
                             logging.info(f"Loaded regex for {category}: {regex_data.get('pattern', '')}")
-                    
-                    if "regex" not in data:
-                        data["regex"] = {}
                     
                     if "Glitched" not in data["regex"]:
                         data["regex"]["Glitched"] = {
@@ -4148,17 +5996,43 @@ class MainWindow(QMainWindow):
                             "pattern": r"d.{0,2}r.{0,2}e{1,3}.{0,2}a.{0,2}m.{0,4}(?:space|scape|spce|scpae|s.?p.?a.?c.?e)(?=\W|$)",
                             "flags": ["i"]
                         }
-                    
+
+                    if "Cyberspace" not in data["regex"]:
+                        data["regex"]["Cyberspace"] = {
+                            "pattern": r"c.{0,2}y.{0,2}b{1,3}.{0,2}e.{0,2}r.{0,4}(?:space|scape|spce|scpae|s.?p.?a.?c.?e)(?=\W|$)",
+                            "flags": ["i"]
+                        }
+
+                    if "Jester" not in data["regex"]:
+                        data["regex"]["Jester"] = {
+                            "pattern": r"j.{0,2}e.{0,2}s.{0,2}t.{0,2}e.{0,2}r(?=\W|$)",
+                            "flags": ["i"]
+                        }
+
+                    if "Void Coin" not in data["regex"]:
+                        data["regex"]["Void Coin"] = {
+                            "pattern": r"v.{0,2}o.{0,2}i.{0,2}d.{0,2}c.{0,2}o.{0,2}i.{0,2}n(?=\W|$)",
+                            "flags": ["i"]
+                        }
+
                     self.rebuild_tables_from_data(data)
                     self.refresh_custom_categories()
                     
             except Exception as e:
                 logging.error(f"Error loading keywords: {e}")
+                with open(KEYWORDS_FILE, "r", encoding="utf-8") as f:
+                    try:
+                        data = json.load(f)
+                        custom_categories = data.get("custom_categories", [])
+                    except:
+                        custom_categories = []
+                
                 with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
                     default_data = {
                         "keywords": {
                             "Glitched": ["glitch", "glig", "404", "4o4"],
-                            "Dreamspace": ["dream", "scape", "space"],
+                            "Dreamspace": ["dream"],
+                            "Cyberspace": ["cyber"],
                             "Jester": ["jest", "obl", "obi"],
                             "Void Coin": ["void", "viod"]
                         },
@@ -4166,6 +6040,7 @@ class MainWindow(QMainWindow):
                             "Global": ["bait", "fake", "aura", "chill", "stigma", "sol", "zero", "day", "dimensional"],
                             "Glitched": [],
                             "Dreamspace": [],
+                            "Cyberspace": [],
                             "Jester": [],
                             "Void Coin": []
                         },
@@ -4177,9 +6052,21 @@ class MainWindow(QMainWindow):
                             "Dreamspace": {
                                 "pattern": r"d.{0,2}r.{0,2}e{1,3}.{0,2}a.{0,2}m.{0,4}(?:space|scape|spce|scpae|s.?p.?a.?c.?e)(?=\W|$)",
                                 "flags": ["i"]
+                            },
+                            "Cyberspace": {
+                                "pattern": r"c.{0,2}y.{0,2}b{1,3}.{0,2}e.{0,2}r.{0,4}(?:space|scape|spce|scpae|s.?p.?a.?c.?e)(?=\W|$)",
+                                "flags": ["i"]
+                            },
+                            "Jester": {
+                                "pattern": r"j.{0,2}e.{0,2}s.{0,2}t.{0,2}e.{0,2}r(?=\W|$)",
+                                "flags": ["i"]
+                            },
+                            "Void Coin": {
+                                "pattern": r"v.{0,2}o.{0,2}i.{0,2}d.{0,2}c.{0,2}o.{0,2}i.{0,2}n(?=\W|$)",
+                                "flags": ["i"]
                             }
                         },
-                        "custom_categories": []
+                        "custom_categories": custom_categories
                     }
                     json.dump(default_data, f)
                 self.rebuild_tables_from_data(default_data)
@@ -4188,7 +6075,8 @@ class MainWindow(QMainWindow):
             default_data = {
                 "keywords": {
                     "Glitched": ["glitch", "glig", "404", "4o4"],
-                    "Dreamspace": ["dream", "scape", "space"],
+                    "Dreamspace": ["dream"],
+                    "Cyberspace": ["cyber"],
                     "Jester": ["jest", "obl", "obi"],
                     "Void Coin": ["void", "viod"]
                 },
@@ -4196,6 +6084,7 @@ class MainWindow(QMainWindow):
                     "Global": ["bait", "fake", "aura", "chill", "stigma", "sol", "zero", "day", "dimensional"],
                     "Glitched": [],
                     "Dreamspace": [],
+                    "Cyberspace": [],
                     "Jester": [],
                     "Void Coin": []
                 },
@@ -4206,6 +6095,18 @@ class MainWindow(QMainWindow):
                     },
                     "Dreamspace": {
                         "pattern": r"d.{0,2}r.{0,2}e{1,3}.{0,2}a.{0,2}m.{0,4}(?:space|scape|spce|scpae|s.?p.?a.?c.?e)(?=\W|$)",
+                        "flags": ["i"]
+                    },
+                    "Cyberspace": {
+                        "pattern": r"c.{0,2}y.{0,2}b{1,3}.{0,2}e.{0,2}r.{0,4}(?:space|scape|spce|scpae|s.?p.?a.?c.?e)(?=\W|$)",
+                        "flags": ["i"]
+                    },
+                    "Jester": {
+                        "pattern": r"j.{0,2}e.{0,2}s.{0,2}t.{0,2}e.{0,2}r(?=\W|$)",
+                        "flags": ["i"]
+                    },
+                    "Void Coin": {
+                        "pattern": r"v.{0,2}o.{0,2}i.{0,2}d.{0,2}c.{0,2}o.{0,2}i.{0,2}n(?=\W|$)",
                         "flags": ["i"]
                     }
                 },
@@ -4240,13 +6141,15 @@ class MainWindow(QMainWindow):
         frame_layout.addWidget(title)
         
         self.server_tree = QTreeWidget()
-        self.server_tree.setHeaderLabels(["Server Name", "Server ID", "Channels"])
-        self.server_tree.setColumnWidth(0, 200)
-        self.server_tree.setColumnWidth(1, 150)
-        self.server_tree.setColumnWidth(2, 450)
+        self.server_tree.setHeaderLabels(["Enabled", "Server Name", "Server ID", "Channels"])
+        self.server_tree.setColumnWidth(0, 100)
+        self.server_tree.setColumnWidth(1, 200)
+        self.server_tree.setColumnWidth(2, 150)
+        self.server_tree.setColumnWidth(3, 350)
         self.server_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         self.server_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        self.server_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.server_tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.server_tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.server_tree.setStyleSheet("""
             QTreeWidget {
                 background-color: #2d2d2d;
@@ -4289,7 +6192,7 @@ class MainWindow(QMainWindow):
         
         btn_layout = QHBoxLayout()
         self.add_btn_server = QPushButton("Add Server")
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.add_btn_server.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -4317,73 +6220,22 @@ class MainWindow(QMainWindow):
                     background-color: #5a8bff;
                 }
             """)
-        self.remove_btn_server = QPushButton("Remove Server")
-        if gradient_theme == True:
-            self.remove_btn_server.setStyleSheet("""
-                QPushButton {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4a7bff, stop:1 #8a4caf);
-                    color: white;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    padding: 8px;
-                }
-                QPushButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #5a8bff, stop:1 #9a5cbf);
-                }
-            """)
-        else:
-            self.remove_btn_server.setStyleSheet("""
-                QPushButton {
-                    background-color: #ff4a4a;
-                    color: white;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    padding: 8px;
-                }
-                QPushButton:hover {
-                    background-color: #ff5a5a;
-                }
-            """)
+        self.add_btn_server.clicked.connect(self.show_add_server_dialog)
         btn_layout.addWidget(self.add_btn_server)
-        btn_layout.addWidget(self.remove_btn_server)
         btn_layout.addStretch()
         frame_layout.addLayout(btn_layout)
         frame_layout.addStretch()
         
         layout.addWidget(frame)
         layout.addStretch()
-        
-        self.add_btn_server.clicked.connect(self.show_add_server_dialog)
-        self.remove_btn_server.clicked.connect(self.remove_server)
+
         self.load_servers()
         return tab
-
-    def remove_server(self):
-        item = self.server_tree.currentItem()
-        if not item:
-            return
-            
-        server_id = item.text(1)
-        
-        if not SERVERS_FILE.exists():
-            return
-            
-        with open(SERVERS_FILE, "r", encoding="utf-8") as f:
-            servers = json.load(f)
-        
-        servers = [s for s in servers if s["id"] != server_id]
-        
-        with open(SERVERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(servers, f, indent=4)
-        
-        self.load_servers()
 
     def show_add_server_dialog(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("Add Server")
-        dlg.setFixedSize(400, 150)
+        dlg.setFixedSize(400, 200)
         layout = QVBoxLayout(dlg)
         
         form = QFormLayout()
@@ -4421,7 +6273,8 @@ class MainWindow(QMainWindow):
         server_data = {
             "name": name,
             "id": server_id,
-            "channels": []
+            "channels": [],
+            "enabled": True
         }
         
         if not SERVERS_FILE.exists():
@@ -4431,6 +6284,20 @@ class MainWindow(QMainWindow):
             with open(SERVERS_FILE, "r", encoding="utf-8") as f:
                 servers = json.load(f)
                 servers.append(server_data)
+        
+        with open(SERVERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(servers, f, indent=4)
+        
+        self.load_servers()
+
+    def remove_server(self, server_id):
+        if not SERVERS_FILE.exists():
+            return
+            
+        with open(SERVERS_FILE, "r", encoding="utf-8") as f:
+            servers = json.load(f)
+        
+        servers = [s for s in servers if s["id"] != server_id]
         
         with open(SERVERS_FILE, "w", encoding="utf-8") as f:
             json.dump(servers, f, indent=4)
@@ -4455,13 +6322,16 @@ class MainWindow(QMainWindow):
             
         dlg = QDialog(self)
         dlg.setWindowTitle(f"Edit Channels - {server['name']}")
-        dlg.resize(500, 400)
+        dlg.resize(600, 400)
         layout = QVBoxLayout(dlg)
         
         self.channels_table = QTableWidget()
-        self.channels_table.setColumnCount(2)
-        self.channels_table.setHorizontalHeaderLabels(["Channel Name", "Channel ID"])
-        self.channels_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.channels_table.setColumnCount(3)
+        self.channels_table.setHorizontalHeaderLabels(["Channel Name", "Channel ID", ""])
+        self.channels_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.channels_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.channels_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.channels_table.setColumnWidth(2, 40)
         self.channels_table.setStyleSheet("""
             QTableWidget {
                 background-color: #2d2d2d;
@@ -4508,19 +6378,10 @@ class MainWindow(QMainWindow):
         self.channels_table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.SelectedClicked)
 
         for channel in server["channels"]:
-            row = self.channels_table.rowCount()
-            self.channels_table.insertRow(row)
-            name_item = QTableWidgetItem(channel["name"])
-            id_item = QTableWidgetItem(channel["id"])
-            name_item.setForeground(QColor("#ffffff"))
-            id_item.setForeground(QColor("#ffffff"))
-            name_item.setFlags(name_item.flags() | Qt.ItemFlag.ItemIsEditable)
-            id_item.setFlags(id_item.flags() | Qt.ItemFlag.ItemIsEditable)
-            self.channels_table.setItem(row, 0, name_item)
-            self.channels_table.setItem(row, 1, id_item)
+            self.add_channel_to_table(channel["name"], channel["id"])
 
         add_btn = QPushButton("Add Channel")
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             add_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -4594,12 +6455,41 @@ class MainWindow(QMainWindow):
         self.channels_table.insertRow(row)
         
         name_item = QTableWidgetItem(name)
-        id_item = QTableWidgetItem(cid)
         name_item.setForeground(QColor("#ffffff"))
-        id_item.setForeground(QColor("#ffffff"))
-        
+        name_item.setFlags(name_item.flags() | Qt.ItemFlag.ItemIsEditable)
         self.channels_table.setItem(row, 0, name_item)
+        
+        id_item = QTableWidgetItem(cid)
+        id_item.setForeground(QColor("#ffffff"))
+        id_item.setFlags(id_item.flags() | Qt.ItemFlag.ItemIsEditable)
         self.channels_table.setItem(row, 1, id_item)
+        
+        remove_btn = QPushButton()
+        remove_btn.setFixedSize(24, 24)
+        remove_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff5555;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #ff8888;
+            }
+        """)
+        remove_svg = QSvgWidget(remove_btn)
+        remove_svg.load(QByteArray(b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#fff" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+        </svg>"""))
+        remove_svg.setFixedSize(12, 12)
+        remove_svg.move(6, 6)
+        remove_btn_layout = QHBoxLayout(remove_btn)
+        remove_btn_layout.setContentsMargins(0, 0, 0, 0)
+        remove_btn.clicked.connect(lambda: self.remove_channel_from_table(row))
+        self.channels_table.setCellWidget(row, 2, remove_btn)
+
+    def remove_channel_from_table(self, row):
+        self.channels_table.removeRow(row)
 
     def save_channels(self, server_id):
         if not SERVERS_FILE.exists():
@@ -4614,13 +6504,17 @@ class MainWindow(QMainWindow):
             
         server["channels"] = []
         for row in range(self.channels_table.rowCount()):
-            name = self.channels_table.item(row, 0).text()
-            cid = self.channels_table.item(row, 1).text()
-            if name and cid:
-                server["channels"].append({
-                    "name": name,
-                    "id": cid
-                })
+            name_item = self.channels_table.item(row, 0)
+            id_item = self.channels_table.item(row, 1)
+            
+            if name_item and id_item:
+                name = name_item.text().strip()
+                cid = id_item.text().strip()
+                if name and cid:
+                    server["channels"].append({
+                        "name": name,
+                        "id": cid
+                    })
         
         with open(SERVERS_FILE, "w", encoding="utf-8") as f:
             json.dump(servers, f, indent=4)
@@ -4642,10 +6536,22 @@ class MainWindow(QMainWindow):
         self.server_tree.clear()
         for server in servers:
             item = QTreeWidgetItem(self.server_tree)
-            item.setText(0, server["name"])
-            item.setText(1, server["id"])
-            item.setForeground(0, QBrush(QColor("#ffffff")))
+            
+            enabled_checkbox = QCheckBox()
+            enabled_checkbox.setChecked(server.get("enabled", True))
+            enabled_checkbox.stateChanged.connect(lambda state, sid=server["id"]: self.toggle_server_enabled(sid, state))
+            
+            checkbox_widget = QWidget()
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox_layout.setContentsMargins(0, 0, 0, 0)
+            checkbox_layout.addWidget(enabled_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
+            
+            self.server_tree.setItemWidget(item, 0, checkbox_widget)
+            
+            item.setText(1, server["name"])
+            item.setText(2, server["id"])
             item.setForeground(1, QBrush(QColor("#ffffff")))
+            item.setForeground(2, QBrush(QColor("#ffffff")))
             
             channels_widget = QWidget()
             channels_layout = QHBoxLayout(channels_widget)
@@ -4671,7 +6577,7 @@ class MainWindow(QMainWindow):
             edit_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #4a7bff;
-                    border-radius: 16px;
+                    border-radius: 6px;
                     border: none;
                 }
                 QPushButton:hover {
@@ -4686,9 +6592,50 @@ class MainWindow(QMainWindow):
             btn_layout.addWidget(svg, alignment=Qt.AlignmentFlag.AlignCenter)
             edit_btn.clicked.connect(lambda checked=False, sid=server["id"]: self.edit_server_channels(sid))
             channels_layout.addWidget(edit_btn, alignment=Qt.AlignmentFlag.AlignRight)
+            
+            remove_btn = QPushButton()
+            remove_btn.setFixedSize(32, 32)
+            remove_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #ff5555;
+                    border-radius: 6px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #ff8888;
+                }
+            """)
+            remove_svg = QSvgWidget()
+            remove_svg.load(QByteArray(b"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#fff" viewBox="0 0 16 16">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+            </svg>"""))
+            remove_svg.setFixedSize(16, 16)
+            remove_btn_layout = QHBoxLayout(remove_btn)
+            remove_btn_layout.setContentsMargins(0, 0, 0, 0)
+            remove_btn_layout.addWidget(remove_svg, alignment=Qt.AlignmentFlag.AlignCenter)
+            remove_btn.clicked.connect(lambda checked=False, sid=server["id"]: self.remove_server(sid))
+            channels_layout.addWidget(remove_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
-            self.server_tree.setItemWidget(item, 2, channels_widget)
+            self.server_tree.setItemWidget(item, 3, channels_widget)
             self.server_tree.addTopLevelItem(item)
+
+    def toggle_server_enabled(self, server_id, state):
+        if not SERVERS_FILE.exists():
+            return
+            
+        with open(SERVERS_FILE, "r", encoding="utf-8") as f:
+            servers = json.load(f)
+        
+        for server in servers:
+            if server["id"] == server_id:
+                server["enabled"] = (state == Qt.CheckState.Checked.value)
+                break
+        
+        with open(SERVERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(servers, f, indent=4)
+        
+        logging.info(f"Server {server_id} enabled state changed to {state == Qt.CheckState.Checked.value}")
 
     def create_settings_tab(self):
         tab = QWidget()
@@ -4722,19 +6669,19 @@ class MainWindow(QMainWindow):
             form_layout.addRow(row_widget)
         
         self.stillbackground_cb = QCheckBox()
-        self.stillbackground_cb.setChecked(stillbackground)
+        self.stillbackground_cb.setChecked(CONFIG_DATA["stillbackground"])
         add_checkbox_row("Still Background (Performance Increase for the UI)", self.stillbackground_cb)
 
         self.semi_transparent_background_cb = QCheckBox()
-        self.semi_transparent_background_cb.setChecked(semi_transparent_background)
+        self.semi_transparent_background_cb.setChecked(CONFIG_DATA["semi_transparent_background"])
         add_checkbox_row("Semi-Transparent UI Background", self.semi_transparent_background_cb)
 
         self.notify_cb = QCheckBox()
-        self.notify_cb.setChecked(toast_notifications)
+        self.notify_cb.setChecked(CONFIG_DATA["toast_notifications"])
         add_checkbox_row("Toast Notifications", self.notify_cb)
 
         self.gradient_theme_cb = QCheckBox()
-        self.gradient_theme_cb.setChecked(gradient_theme)
+        self.gradient_theme_cb.setChecked(CONFIG_DATA["gradient_theme"])
         add_checkbox_row("Gradient Theme", self.gradient_theme_cb)
 
         self.advanced_mode_note = QLabel("Enabling Advanced Mode will unlock additional settings and features intended for users who know what they're doing.\nPlease refrain from enabling this unless you understand the implications.")
@@ -4742,15 +6689,14 @@ class MainWindow(QMainWindow):
         self.advanced_mode_note.setStyleSheet("font-size: 12px; color: #bbbbbb;")
         form_layout.addRow(self.advanced_mode_note)
         self.advanced_mode_cb = QCheckBox()
-        self.advanced_mode_cb.setChecked(advanced_mode)
-        self.advanced_mode_cb.stateChanged.connect(self.on_advanced_mode_changed)
+        self.advanced_mode_cb.setChecked(CONFIG_DATA["advanced_mode"])
         add_checkbox_row("Advanced Mode", self.advanced_mode_cb)
 
         frame_layout.addLayout(form_layout)
 
         self.save_btn = QPushButton("Save Settings")
         self.save_btn.setFixedHeight(45)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.save_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -4794,8 +6740,9 @@ class MainWindow(QMainWindow):
             msg.setInformativeText(
                 "Advanced Mode unlocks experimental features and settings that are intended for experienced users only.\n\n"
                 "Features include:\n"
+                "• Ability to Snipe Non-Sol's RNG Roblox Games\n"
                 "• Custom RegEx Keyword Detections\n\n"
-                "Are you sure you want to enable Advanced Mode?"
+                "Are you sure you want to enable Advanced Mode?\nEnabling Advanced Mode requires an application restart to take effect."
             )
             
             enable_btn = msg.addButton("Enable Advanced Mode", QMessageBox.ButtonRole.AcceptRole)
@@ -4812,6 +6759,389 @@ class MainWindow(QMainWindow):
             self.advanced_mode_cb.setChecked(False)
         
         self.save_settings()
+
+    def create_logs_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        frame = GradientFrame()
+        frame.setStyleSheet("border-radius: 12px;")
+        frame.setMinimumHeight(600)
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(20, 20, 20, 20)
+        frame_layout.setSpacing(15)
+
+        title = QLabel("Logs")
+        title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0;")
+        title.setContentsMargins(0, 0, 0, 10)
+        frame_layout.addWidget(title)
+
+        filter_layout = QHBoxLayout()
+        filter_layout.setSpacing(20)
+        filter_layout.setContentsMargins(0, 0, 0, 15)
+
+        filter_label = QLabel("Filter:")
+        filter_label.setStyleSheet("font-size: 14px; color: #e0e0e0; font-weight: 500;")
+        filter_layout.addWidget(filter_label)
+
+        self.info_checkbox = QCheckBox("INFO")
+        self.info_checkbox.setChecked(True)
+        self.info_checkbox.setStyleSheet("color: #4a9eff; font-size: 13px;")
+        self.info_checkbox.stateChanged.connect(self.update_log_filter)
+        filter_layout.addWidget(self.info_checkbox)
+
+        self.warning_checkbox = QCheckBox("WARNING")
+        self.warning_checkbox.setChecked(True)
+        self.warning_checkbox.setStyleSheet("color: #ffb84a; font-size: 13px;")
+        self.warning_checkbox.stateChanged.connect(self.update_log_filter)
+        filter_layout.addWidget(self.warning_checkbox)
+
+        self.error_checkbox = QCheckBox("ERROR")
+        self.error_checkbox.setChecked(True)
+        self.error_checkbox.setStyleSheet("color: #ff6b6b; font-size: 13px;")
+        self.error_checkbox.stateChanged.connect(self.update_log_filter)
+        filter_layout.addWidget(self.error_checkbox)
+
+        filter_layout.addStretch()
+
+        clear_btn = QPushButton("Clear Logs")
+        clear_btn.setFixedHeight(32)
+        clear_btn.setFixedWidth(110)
+        if CONFIG_DATA["gradient_theme"]:
+            clear_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #4a7bff, stop:1 #8a4caf);
+                    color: white;
+                    font-weight: 500;
+                    font-size: 12px;
+                    border-radius: 6px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #5a8bff, stop:1 #9a5cbf);
+                }
+                QPushButton:pressed {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #3a6bef, stop:1 #7a3c9f);
+                }
+            """)
+        else:
+            clear_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a7bff;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 12px;
+                    border-radius: 6px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #5a8bff;
+                }
+                QPushButton:pressed {
+                    background-color: #3a6bef;
+                }
+            """)
+        clear_btn.clicked.connect(self.clear_logs)
+        filter_layout.addWidget(clear_btn)
+
+        export_btn = QPushButton("Export Logs")
+        export_btn.setFixedHeight(32)
+        export_btn.setFixedWidth(120)
+        if CONFIG_DATA["gradient_theme"]:
+            export_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #4a7bff, stop:1 #8a4caf);
+                    color: white;
+                    font-weight: 500;
+                    font-size: 12px;
+                    border-radius: 6px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #5a8bff, stop:1 #9a5cbf);
+                }
+                QPushButton:pressed {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #3a6bef, stop:1 #7a3c9f);
+                }
+            """)
+        else:
+            export_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a7bff;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 12px;
+                    border-radius: 6px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #5a8bff;
+                }
+                QPushButton:pressed {
+                    background-color: #3a6bef;
+                }
+            """)
+        export_btn.clicked.connect(self.export_logs)
+        filter_layout.addWidget(export_btn)
+
+        open_dir_btn = QPushButton("Open Logs")
+        open_dir_btn.setFixedHeight(32)
+        open_dir_btn.setFixedWidth(110)
+        if CONFIG_DATA["gradient_theme"]:
+            open_dir_btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #4a7bff, stop:1 #8a4caf);
+                    color: white;
+                    font-weight: 500;
+                    font-size: 12px;
+                    border-radius: 6px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #5a8bff, stop:1 #9a5cbf);
+                }
+                QPushButton:pressed {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #3a6bef, stop:1 #7a3c9f);
+                }
+            """)
+        else:
+            open_dir_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a7bff;
+                    color: white;
+                    font-weight: 500;
+                    font-size: 12px;
+                    border-radius: 6px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #5a8bff;
+                }
+                QPushButton:pressed {
+                    background-color: #3a6bef;
+                }
+            """)
+        open_dir_btn.clicked.connect(self.open_logs_directory)
+        filter_layout.addWidget(open_dir_btn)
+
+        frame_layout.addLayout(filter_layout)
+
+        self.logs_table = QTableWidget()
+        self.logs_table.setColumnCount(3)
+        self.logs_table.setHorizontalHeaderLabels(["Time", "Level", "Message"])
+        self.logs_table.setColumnWidth(0, 90)
+        self.logs_table.setColumnWidth(1, 80)
+        self.logs_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        self.logs_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self.logs_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.logs_table.verticalHeader().setVisible(False)
+        self.logs_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.logs_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.logs_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.logs_table.setAlternatingRowColors(True)
+        self.logs_table.setShowGrid(False)
+
+        if CONFIG_DATA["gradient_theme"]:
+            scrollbar_handle = "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #4a7bff, stop:1 #8a4caf);"
+            scrollbar_hover = "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #5a8bff, stop:1 #9a5cbf);"
+        else:
+            scrollbar_handle = "background-color: #4a7bff;"
+            scrollbar_hover = "background-color: #5a8bff;"
+        
+        table_stylesheet = f"""
+            QTableWidget {{
+                background-color: #2a2a2a;
+                alternate-background-color: #252525;
+                gridline-color: #3a3a3a;
+                color: #e0e0e0;
+                border: 1px solid #444;
+                border-radius: 8px;
+            }}
+            QTableWidget::item {{
+                padding: 8px;
+                border-bottom: 1px solid #3a3a3a;
+            }}
+            QTableWidget::item:selected {{
+                background-color: #4a7bff;
+                color: white;
+            }}
+            QHeaderView {{
+                background-color: #3c3c3c;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }}
+            QHeaderView::section {{
+                background-color: #3c3c3c;
+                color: white;
+                padding: 12px;
+                border: none;
+                font-weight: bold;
+                font-size: 12px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }}
+            QHeaderView::section:first {{
+                border-top-left-radius: 8px;
+            }}
+            QHeaderView::section:last {{
+                border-top-right-radius: 8px;
+            }}
+            QScrollBar:vertical {{
+                background-color: #2a2a2a;
+                width: 12px;
+                border-radius: 6px;
+            }}
+            QScrollBar::handle:vertical {{
+                {scrollbar_handle}
+                border-radius: 6px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                {scrollbar_hover}
+            }}
+            QScrollBar::add-line:vertical {{
+                border: none;
+                background: none;
+            }}
+            QScrollBar::sub-line:vertical {{
+                border: none;
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: #2a2a2a;
+                height: 12px;
+                border-radius: 6px;
+            }}
+            QScrollBar::handle:horizontal {{
+                {scrollbar_handle}
+                border-radius: 6px;
+                min-width: 20px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                {scrollbar_hover}
+            }}
+            QScrollBar::add-line:horizontal {{
+                border: none;
+                background: none;
+            }}
+            QScrollBar::sub-line:horizontal {{
+                border: none;
+                background: none;
+            }}
+        """
+        self.logs_table.setStyleSheet(table_stylesheet)
+
+        frame_layout.addWidget(self.logs_table)
+
+        layout.addWidget(frame)
+        layout.addStretch()
+
+        log_emitter.log_signal.connect(self.add_log_entry)
+        if not log_emitter.isRunning():
+            log_emitter.start()
+
+        self.log_entries = []
+
+        return tab
+
+    def add_log_entry(self, timestamp, level, message):
+        self.log_entries.append({
+            'timestamp': timestamp,
+            'level': level,
+            'message': message
+        })
+
+        self.update_log_filter()
+
+    def update_log_filter(self):
+        show_info = self.info_checkbox.isChecked()
+        show_warning = self.warning_checkbox.isChecked()
+        show_error = self.error_checkbox.isChecked()
+
+        scroll_value = self.logs_table.verticalScrollBar().value()
+        self.logs_table.setRowCount(0)
+
+        for entry in self.log_entries:
+            level = entry['level']
+            
+            if (level == 'INFO' and not show_info) or \
+               (level == 'WARNING' and not show_warning) or \
+               (level == 'ERROR' and not show_error):
+                continue
+
+            row = self.logs_table.rowCount()
+            self.logs_table.insertRow(row)
+
+            time_item = QTableWidgetItem(entry['timestamp'])
+            time_item.setForeground(QColor("#888888"))
+            time_item.setFont(QFont("Consolas", 11))
+            self.logs_table.setItem(row, 0, time_item)
+
+            level_item = QTableWidgetItem(level)
+            level_item.setFont(QFont("Consolas", 11))
+            if level == 'INFO':
+                level_item.setForeground(QColor("#4a9eff"))
+            elif level == 'WARNING':
+                level_item.setForeground(QColor("#ffb84a"))
+            elif level == 'ERROR':
+                level_item.setForeground(QColor("#ff6b6b"))
+            self.logs_table.setItem(row, 1, level_item)
+
+            message_item = QTableWidgetItem(entry['message'])
+            message_item.setFont(QFont("Consolas", 11))
+            message_item.setForeground(QColor("#e0e0e0"))
+            message_item.setToolTip(entry['message'])
+            self.logs_table.setItem(row, 2, message_item)
+
+        self.logs_table.verticalScrollBar().setValue(scroll_value)
+
+    def clear_logs(self):
+        self.log_entries.clear()
+        self.logs_table.setRowCount(0)
+
+    def export_logs(self):
+        try:
+            current_log_file = LOGS_DIR / log_filename
+            if not current_log_file.exists():
+                QMessageBox.warning(self, "Export Logs", "No log file found to export.")
+                return
+            
+            save_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Logs",
+                str(current_log_file),
+                f"Log Files (*.log);;All Files (*)"
+            )
+            
+            if save_path:
+                shutil.copy2(str(current_log_file), save_path)
+                QMessageBox.information(self, "Export Logs", f"Logs exported successfully to:\n{save_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export logs:\n{str(e)}")
+
+    def open_logs_directory(self):
+        try:
+            logs_path = str(LOGS_DIR)
+            
+            if platform.system() == "Windows":
+                os.startfile(logs_path)
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.Popen(["open", logs_path])
+            else:
+                logging.error(f"Unsupported OS: {platform.system()}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to open logs directory:\n{str(e)}")
 
     def create_credits_tab(self):
         tab = QWidget()
@@ -4958,18 +7288,18 @@ class MainWindow(QMainWindow):
         scroll_layout.addWidget(pajamas_card)
 
         vex_icons = [
-            create_svg_icon(DISCORD_SVG, "https://discord.com/users/1018875765565177976", "vex.rng", "discord"),
+            create_svg_icon(DISCORD_SVG, "https://discord.com/users/1018875765565177976", "vex.sys", "discord"),
             create_svg_icon(ROBLOX_SVG, "https://www.roblox.com/users/682980257/profile", "vex_coder", "roblox"),
-            create_svg_icon(GITHUB_SVG, "https://github.com/vexthecoder", "vexthecoder", "github"),
+            create_svg_icon(GITHUB_SVG, "https://github.com/vexsyx", "vexsyx", "github"),
         ]
         vex_card = create_profile_card(
-            SETTINGS_DIR / "vex.png", "vex", "yo: gurt", vex_icons
+            SETTINGS_DIR / "vex.png", "vex", "i program from time to time", vex_icons
         )
         scroll_layout.addWidget(vex_card)
 
         donate_btn = QPushButton("Donate to yeswe/PJ")
         donate_btn.setFixedHeight(60)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             donate_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -5002,7 +7332,7 @@ class MainWindow(QMainWindow):
 
         donate_btn2 = QPushButton("Donate to vex")
         donate_btn2.setFixedHeight(60)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             donate_btn2.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -5084,7 +7414,7 @@ class MainWindow(QMainWindow):
 
         self.save_btn = QPushButton("Save Settings")
         self.save_btn.setFixedHeight(45)
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             self.save_btn.setStyleSheet("""
                 QPushButton {
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -5120,7 +7450,7 @@ class MainWindow(QMainWindow):
         return tab
     
     def get_stylesheet(self):
-        if gradient_theme == True:
+        if CONFIG_DATA["gradient_theme"] == True:
             return """
                 QMainWindow {
                     background-color: #1e1e1e;
@@ -5428,33 +7758,62 @@ class MainWindow(QMainWindow):
         self.servers_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(3))
         self.settings_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(4))
         self.beta_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(5))
-        self.credits_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(6))
+        self.logs_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(6))
+        self.credits_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(7))
 
         self.start_btn.clicked.connect(self.toggle_sniping)
 
         self.token_input.textChanged.connect(self.save_settings)
-        self.cookie_input.textChanged.connect(self.save_settings)
         self.glitch_cb.stateChanged.connect(self.save_settings)
         self.dream_cb.stateChanged.connect(self.save_settings)
+        self.cyber_cb.stateChanged.connect(self.save_settings)
         self.jester_cb.stateChanged.connect(self.save_settings)
         self.void_cb.stateChanged.connect(self.save_settings)
         self.notify_cb.stateChanged.connect(self.save_settings)
-        self.leave_biome_cb.stateChanged.connect(self.save_settings)
-        self.close_roblox_cb.stateChanged.connect(self.save_settings)
+        self.close_roblox_cb.stateChanged.connect(lambda: self.toggle_leave_settings("close_roblox"))
+        self.leave_game_cb.stateChanged.connect(lambda: self.toggle_leave_settings("leave_game"))
         self.minimize_other_windows_cb.stateChanged.connect(self.save_settings)
+        self.auto_pause_sniper_cb.stateChanged.connect(self.save_settings)
+        self.pause_duration_input.textChanged.connect(self.save_settings)
         self.hk1_cb.stateChanged.connect(self.save_settings)
         self.hk2_cb.stateChanged.connect(self.save_settings)
         self.hk3_cb.stateChanged.connect(self.save_settings)
         self.stillbackground_cb.stateChanged.connect(self.save_settings)
         self.semi_transparent_background_cb.stateChanged.connect(self.save_settings)
         self.gradient_theme_cb.stateChanged.connect(self.save_settings)
-        self.protocol_combo.currentTextChanged.connect(self.save_settings)
+        self.advanced_mode_cb.stateChanged.connect(self.on_advanced_mode_changed)
+        self.snipe_ropro_links_cb.stateChanged.connect(self.save_settings)
+
+        if CONFIG_DATA.get("advanced_mode", False) == True:
+            self.only_join_sols_links_cb.stateChanged.connect(self.save_settings)
+
+    def toggle_leave_settings(self, toggle_pressed):
+        if not toggle_pressed:
+            return
+        if toggle_pressed == "close_roblox":
+            if self.close_roblox_cb.isChecked():
+                self.leave_game_cb.setChecked(False)
+                self.leave_game_cb.setEnabled(False)
+            else:
+                self.leave_game_cb.setEnabled(True)
+        elif toggle_pressed == "leave_game":
+            if self.leave_game_cb.isChecked():
+                self.close_roblox_cb.setChecked(False)
+                self.close_roblox_cb.setEnabled(False)
+            else:
+                self.close_roblox_cb.setEnabled(True)
+        self.save_settings()
     
     def load_settings(self):
         if KEYWORDS_FILE.exists():
             try:
                 with open(KEYWORDS_FILE, "r", encoding="utf-8") as f:
-                    keywords = json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        keywords = data
+                    else:
+                        keywords = data.get("keywords", [])
+                    
                     self.keyword_list.clear()
                     for kw in keywords:
                         self.keyword_list.addItem(kw['name'])
@@ -5480,6 +7839,19 @@ class MainWindow(QMainWindow):
                 json.dump(self.default_servers, f)
         
         load_settings()
+        
+        if CONFIG_DATA["override_protocol_enabled"] and CONFIG_DATA["override_protocol_path"]:
+            self.selected_override_version = {
+                "name": f"Custom: {Path(CONFIG_DATA['override_protocol_path']).name}",
+                "path": CONFIG_DATA["override_protocol_path"],
+                "type": CONFIG_DATA["override_protocol_type"]
+            }
+            self.override_version_label.setText(self.selected_override_version["name"])
+        
+        if hasattr(self, 'override_protocol_container'):
+            self.override_protocol_container.setVisible(CONFIG_DATA["advanced_mode"])
+        
+        self.update_protocol_status()
     
     def add_keyword_list(self):
         dialog = KeywordDialog(self)
@@ -5494,11 +7866,20 @@ class MainWindow(QMainWindow):
             if KEYWORDS_FILE.exists():
                 try:
                     with open(KEYWORDS_FILE, "r", encoding="utf-8") as f:
-                        keywords = json.load(f)
-                        if 0 <= row < len(keywords):
-                            del keywords[row]
-                            with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
-                                json.dump(keywords, f, indent=4)
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            keywords = data
+                            if 0 <= row < len(keywords):
+                                del keywords[row]
+                                with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
+                                    json.dump(keywords, f, indent=4)
+                        else:
+                            keywords = data.get("keywords", [])
+                            custom_categories = data.get("custom_categories", [])
+                            if 0 <= row < len(keywords):
+                                del keywords[row]
+                                with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
+                                    json.dump({"keywords": keywords, "custom_categories": custom_categories}, f, indent=4)
                 except:
                     pass
             else:
@@ -5506,62 +7887,98 @@ class MainWindow(QMainWindow):
                     json.dump(self.default_keywords, f)
 
     def save_settings(self):
-        global token, roblox_cookie, glitchsniping, dreamsniping, jestersniping, voidcoinsniping, toast_notifications, leave_if_wrong_biome, close_roblox_before_joining, minimize_other_windows, launch_protocol, advanced_mode
-        global open_roblox_toggle, stop_sniper_toggle, toggle_sniper_toggle, open_roblox_key, stop_sniper_key, toggle_sniper_key, pause_duration
-        global stillbackground, semi_transparent_background
-        global gradient_theme
+        CONFIG_DATA["token"] = self.token_input.text()
+        CONFIG_DATA["glitchsniping"] = self.glitch_cb.isChecked()
+        CONFIG_DATA["dreamsniping"] = self.dream_cb.isChecked()
+        CONFIG_DATA["cybersniping"] = self.cyber_cb.isChecked()
+        CONFIG_DATA["jestersniping"] = self.jester_cb.isChecked()
+        CONFIG_DATA["voidcoinsniping"] = self.void_cb.isChecked()
+        CONFIG_DATA["toast_notifications"] = self.notify_cb.isChecked()
+        CONFIG_DATA["advanced_mode"] = self.advanced_mode_cb.isChecked()
+        CONFIG_DATA["close_roblox_before_joining"] = self.close_roblox_cb.isChecked()
+        CONFIG_DATA["leave_game_before_joining"] = self.leave_game_cb.isChecked()
+        CONFIG_DATA["minimize_other_windows"] = self.minimize_other_windows_cb.isChecked()
+        CONFIG_DATA["auto_pause_sniper"] = self.auto_pause_sniper_cb.isChecked()
+        CONFIG_DATA["open_roblox_toggle"] = self.hk1_cb.isChecked()
+        CONFIG_DATA["stop_sniper_toggle"] = self.hk2_cb.isChecked()
+        CONFIG_DATA["toggle_sniper_toggle"] = self.hk3_cb.isChecked()
+        CONFIG_DATA["loading_asset_skipper_toggle"] = self.hk4_cb.isChecked()
+        CONFIG_DATA["main_menu_skipper_toggle"] = self.hk5_cb.isChecked()
+        CONFIG_DATA["pause_duration"] = self.pause_duration_input.text()
+        CONFIG_DATA["stillbackground"] = self.stillbackground_cb.isChecked()
+        CONFIG_DATA["semi_transparent_background"] = self.semi_transparent_background_cb.isChecked()
+        CONFIG_DATA["gradient_theme"] = self.gradient_theme_cb.isChecked()
+        CONFIG_DATA["snipe_ropro_links"] = self.snipe_ropro_links_cb.isChecked()
         
-        token = self.token_input.text()
-        roblox_cookie = self.cookie_input.text()
-        glitchsniping = self.glitch_cb.isChecked()
-        dreamsniping = self.dream_cb.isChecked()
-        jestersniping = self.jester_cb.isChecked()
-        voidcoinsniping = self.void_cb.isChecked()
-        toast_notifications = self.notify_cb.isChecked()
-        advanced_mode = self.advanced_mode_cb.isChecked()
-        close_roblox_before_joining = self.close_roblox_cb.isChecked()
-        leave_if_wrong_biome = self.leave_biome_cb.isChecked()
-        minimize_other_windows = self.minimize_other_windows_cb.isChecked()
-        launch_protocol = self.protocol_combo.currentText()
-        open_roblox_toggle = self.hk1_cb.isChecked()
-        stop_sniper_toggle = self.hk2_cb.isChecked()
-        toggle_sniper_toggle = self.hk3_cb.isChecked()
-        pause_duration = self.pause_duration_input.text()
-        stillbackground = self.stillbackground_cb.isChecked()
-        semi_transparent_background = self.semi_transparent_background_cb.isChecked()
-        gradient_theme = self.gradient_theme_cb.isChecked()
+        if hasattr(self, 'selected_override_version'):
+            CONFIG_DATA["override_protocol_enabled"] = True
+            CONFIG_DATA["override_protocol_path"] = self.selected_override_version["path"]
+            CONFIG_DATA["override_protocol_type"] = self.selected_override_version["type"]
 
         data = self.get_current_keyword_data()
         custom_categories = data.get("custom_categories", [])
+        
+        for key in list(CONFIG_DATA.keys()):
+            if key.startswith("customcat_"):
+                category_name = key.replace("customcat_", "").replace("_", " ")
+                if category_name not in custom_categories:
+                    custom_categories.append(category_name)
+        
         for category in custom_categories:
             checkbox = self.custom_category_checkboxes.get(category)
             if checkbox:
-                globals()[f"customcat_{category}"] = checkbox.isChecked()
+                setting_name = f"customcat_{category.replace(' ', '_')}"
+                CONFIG_DATA[setting_name] = checkbox.isChecked()
+            else:
+                setting_name = f"customcat_{category.replace(' ', '_')}"
+                if setting_name not in CONFIG_DATA:
+                    CONFIG_DATA[setting_name] = False
+
+        if CONFIG_DATA["advanced_mode"] == True:
+            CONFIG_DATA["only_join_sols_links"] = self.only_join_sols_links_cb.isChecked()
 
         save_settings()
         logging.info("Settings saved successfully")
     
-    def temporarily_pause_sniper(self, duration=None):
+    def check_pause_status(self):
         global sniper_paused, pause_end_time
-        if sniper_active and not sniper_paused:
-            if duration is None:
-                duration = pause_duration
-            
+        
+        if sniper_paused and pause_end_time:
+            if datetime.now() >= pause_end_time:
+                self.unpause_sniper()
+
+    def temporarily_pause_sniper(self, duration_seconds):
+        global sniper_paused, pause_end_time
+        try:
+            duration_int = int(duration_seconds)
+            pause_end_time = datetime.now() + timedelta(seconds=duration_int)
             sniper_paused = True
-            pause_end_time = time.time() + duration
             
-            self.status_label.setText(f"Status: Paused ({duration}s)")
-            self.status_label.setStyleSheet("font-size: 14px; color: #ffff55;")
+            if CONFIG_DATA["toast_notifications"] and platform.system() == "Windows":
+                try:
+                    self.show_toast("Sniper Paused", f"Sniper paused for {duration_int} seconds")
+                except Exception as e:
+                    logging.error(f"Failed to show toast: {e}")
+            
+            logging.info(f"Sniper paused for {duration_int} seconds")
+            
+            self.status_label.setText(f"Status: Paused ({duration_int}s)")
+            self.status_label.setStyleSheet("font-size: 14px; color: #FF9800;")
             self.start_btn.setText("Resume Sniping")
             
-            logging.info(f"Sniper paused for {duration} seconds")
-            self.show_toast("Sniper Paused", f"Sniping paused for {duration} seconds.")
-            
-            threading.Timer(duration, self.unpause_sniper).start()
+        except Exception as e:
+            logging.error(f"Error in temporarily_pause_sniper: {e}")
+            logging.error(f"Duration value received: {duration_seconds}, type: {type(duration_seconds)}")
 
     def unpause_sniper(self):
-        global sniper_paused
+        global sniper_paused, pause_end_time
+        if sniper_paused == False:
+            logging.info("Sniper already running, skipping unpause")
+            return
+        
         sniper_paused = False
+        pause_end_time = None
+        
         if sniper_active:
             self.status_label.setText("Status: Running")
             self.status_label.setStyleSheet("font-size: 14px; color: #55ff55;")
@@ -5705,68 +8122,8 @@ class MainWindow(QMainWindow):
         self.setMask(region)
         super().resizeEvent(event)
 
-    def get_oysterdetector_status(self):
-        try:
-            response = requests.get(
-                f"{OYSTERDETECTOR_API_URL}/status",
-                timeout=2
-            )
-            if response.status_code == 200:
-                return response.json().get("running", False)
-            return False
-        except RequestException as e:
-            logging.info(f"Oyster Detector not responding: {e}")
-            return False
-        except Exception as e:
-            logging.error(f"Error checking detector status: {e}")
-            return False
-    
-    def toggle_oysterdetector_if_running(self):
-        if self.get_oysterdetector_status():
-            try:
-                response = requests.post(
-                    f"{OYSTERDETECTOR_API_URL}/toggle",
-                    json={"only_if": "running"},
-                    timeout=2
-                )
-                if response.status_code == 200:
-                    return response.json().get("success", False)
-            except RequestException as e:
-                logging.error(f"Error toggling detector: {e}")
-        return False
-    
-    def get_maxstellar_status(self):
-        try:
-            response = requests.get(
-                f"{MAXSTELLAR_API_URL}/status",
-                timeout=2
-            )
-            if response.status_code == 200:
-                return response.json().get("running", False)
-            return False
-        except RequestException as e:
-            logging.info(f"Maxstellar not responding: {e}")
-            return False
-        except Exception as e:
-            logging.error(f"Error checking detector status: {e}")
-            return False
-
-    def toggle_maxstellar_if_running(self):
-        if self.get_maxstellar_status():
-            try:
-                response = requests.post(
-                    f"{MAXSTELLAR_API_URL}/pause",
-                    json={"only_if": "running"},
-                    timeout=2
-                )
-                if response.status_code == 200:
-                    return response.json().get("success", False)
-            except RequestException as e:
-                logging.error(f"Error toggling Max Stellar: {e}")
-        return False
-
     def show_toast(self, title, message):
-        if not toast_notifications:
+        if not CONFIG_DATA["toast_notifications"]:
             return
         
         if hasattr(self, '_current_toast_thread') and self._current_toast_thread:
@@ -5814,7 +8171,6 @@ class MainWindow(QMainWindow):
                         return
                         
                     try:
-                        import subprocess
                         script = f'''
                         display notification "{message}" with title "{title}" sound name "default"
                         '''
@@ -5836,6 +8192,7 @@ class MainWindow(QMainWindow):
         self._current_toast_thread = threading.Thread(target=show_toast_thread, daemon=True)
         self._current_toast_thread.start()
 
+
 class DiscordClient(discord.Client):
     def __init__(self, main_window):
         super().__init__(
@@ -5844,6 +8201,7 @@ class DiscordClient(discord.Client):
         )
         self.main_window = main_window
         self.monitored_channels = self.load_monitored_channels()
+        self.monitored_servers = self.load_monitored_servers()
 
     def load_monitored_channels(self):
         channels = set()
@@ -5852,14 +8210,29 @@ class DiscordClient(discord.Client):
                 with open(SERVERS_FILE, 'r') as f:
                     servers = json.load(f)
                 for server in servers:
-                    for channel in server.get('channels', []):
-                        channels.add(channel['id'])
+                    if server.get('enabled', True):
+                        for channel in server.get('channels', []):
+                            channels.add(channel['id'])
         except Exception as e:
             logging.error(f"Error loading monitored channels: {e}")
         return channels
 
-    def reload_monitored_channels(self):
+    def load_monitored_servers(self):
+        servers = set()
+        try:
+            if SERVERS_FILE.exists():
+                with open(SERVERS_FILE, 'r') as f:
+                    server_data = json.load(f)
+                for server in server_data:
+                    if server.get('enabled', True):
+                        servers.add(server['id'])
+        except Exception as e:
+            logging.error(f"Error loading monitored servers: {e}")
+        return servers
+
+    def reload_monitors(self):
         self.monitored_channels = self.load_monitored_channels()
+        self.monitored_servers = self.load_monitored_servers()
 
     async def on_ready(self):
         logging.info(f'Logged in as {self.user}')
@@ -5875,9 +8248,9 @@ class DiscordClient(discord.Client):
         if not sniper_active or sniper_paused or self.main_window.is_processing:
             return
 
-        self.reload_monitored_channels()
+        self.reload_monitors()
 
-        if str(message.channel.id) not in self.monitored_channels:
+        if str(message.channel.id) not in self.monitored_channels or str(message.guild.id) not in self.monitored_servers:
             return
 
         if not message.content and not message.embeds:
@@ -5888,12 +8261,10 @@ class DiscordClient(discord.Client):
             embed_dict = embed.to_dict()
             embeds_data.append(embed_dict)
 
-        asyncio.create_task(self.main_window.process_server_link(message.content if message.content else "", embeds=embeds_data if message.author.bot else None))
+        asyncio.create_task(self.main_window.process_server_link(message.content if message.content else "", embeds=embeds_data if message.author.bot else None, discord_user_id=self.user.id, discord_channel_id=message.channel.id, discord_server_id=message.guild.id))
 
 
 if __name__ == "__main__":
-    load_settings()
-    
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     
@@ -5920,9 +8291,23 @@ if __name__ == "__main__":
             font_families = QFontDatabase.applicationFontFamilies(font_id)
             if font_families:
                 app.setFont(QFont(font_families[0], 10))
+
+    load_settings()
+    
+    global gradient_theme_persist
+    gradient_theme_persist = CONFIG_DATA.get("gradient_theme", False)
+    
+    download_assets()
+    
+    font_path = str(SETTINGS_DIR / "font.ttf")
+    if os.path.exists(font_path):
+        font_id = QFontDatabase.addApplicationFont(font_path)
+        if font_id != -1:
+            font_families = QFontDatabase.applicationFontFamilies(font_id)
+            if font_families:
+                app.setFont(QFont(font_families[0], 10))
     
     window = MainWindow()
-    download_assets()
     window.show()
     
     sys.exit(app.exec())
