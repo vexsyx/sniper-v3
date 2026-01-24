@@ -122,7 +122,7 @@ REDIRECT_GAME_PATTERN = re.compile(r'launchData=(\d+)/([a-f0-9\-]+)')
 
 IS_BETA_VERSION = True
 CURRENT_VERSION = "3.0.0"
-BETA_VERSION = 6
+BETA_VERSION = 6.1
 FULL_VERSION = f"{CURRENT_VERSION}-{BETA_VERSION}" if IS_BETA_VERSION else CURRENT_VERSION
 IS_PRE_RELEASE = False
 
@@ -2450,8 +2450,6 @@ class MainWindow(QMainWindow):
         self.keywords_btn = self.create_sidebar_btn("Keywords")
         self.servers_btn = self.create_sidebar_btn("Servers")
         self.settings_btn = self.create_sidebar_btn("Miscellaneous")
-        if IS_BETA_VERSION:
-            self.beta_btn = self.create_sidebar_btn("Beta Features")
         self.logs_btn = self.create_sidebar_btn("Logs")
         self.credits_btn = self.create_sidebar_btn("Credits")
         self.discord_btn = self.create_sidebar_btn("Discord", svg=DISCORD_SVG, color="#5865F2", url="https://discord.gg/RPcPUp47YD")
@@ -2462,8 +2460,6 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self.keywords_btn)
         sidebar_layout.addWidget(self.servers_btn)
         sidebar_layout.addWidget(self.settings_btn)
-        if IS_BETA_VERSION:
-            sidebar_layout.addWidget(self.beta_btn)
         sidebar_layout.addWidget(self.logs_btn)
         sidebar_layout.addWidget(self.credits_btn)
         sidebar_layout.addStretch()
@@ -2487,7 +2483,6 @@ class MainWindow(QMainWindow):
         self.keywords_tab = self.create_keywords_tab()
         self.servers_tab = self.create_servers_tab()
         self.settings_tab = self.create_settings_tab()
-        self.beta_tab = self.create_beta_tab()
         self.logs_tab = self.create_logs_tab()
         self.credits_tab = self.create_credits_tab()
         
@@ -2496,8 +2491,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.keywords_tab, "Keywords")
         self.tab_widget.addTab(self.servers_tab, "Servers")
         self.tab_widget.addTab(self.settings_tab, "Miscellaneous")
-        if IS_BETA_VERSION:
-            self.tab_widget.addTab(self.beta_tab, "Beta Features")
         self.tab_widget.addTab(self.logs_tab, "Logs")
         self.tab_widget.addTab(self.credits_tab, "Credits")
 
@@ -3174,8 +3167,6 @@ class MainWindow(QMainWindow):
             clean_content = re.sub(r'[\u2000-\uFFFF]', '', clean_content)
             clean_content = clean_content.replace("[", "").replace("]", "").replace("(", "").replace(")", "").replace("{", "").replace("}", "").replace("`", "").replace("~", "").replace("|", " ")
             clean_content = clean_content.lower()
-
-            logging.info(f"Processing content in channel id {discord_channel_id} on server id {discord_server_id}: {clean_content}")
             
             urls = []
             url_pattern = re.compile(r'(?:(?:https?|roblox)://[^\s<>"]+|www\.[^\s<>"]+\.[^\s<>"]+|(?:ro\.pro|ropro\.io)/[^\s<>"]+)', re.IGNORECASE)
@@ -3189,14 +3180,17 @@ class MainWindow(QMainWindow):
                 keywords_data = json.load(f)
 
             blacklisted = False
+            detected_blacklist_kws = []
             for category in ["Global", "Glitched", "Dreamspace", "Cyberspace", "Jester", "Void Coin"] + keywords_data.get("custom_categories", []):
                 blacklist_kws = keywords_data.get("blacklist", {}).get(category, [])
-                if any(kw.lower() in clean_content for kw in blacklist_kws):
-                    logging.warning(f"Message blacklisted")
+                matched_blacklist_kws = [kw for kw in blacklist_kws if kw.lower() in clean_content]
+                if matched_blacklist_kws:
+                    detected_blacklist_kws.extend(matched_blacklist_kws)
                     blacklisted = True
                     break
             
             if blacklisted:
+                logging.warning(f"Message has blacklisted keywords: {', '.join(detected_blacklist_kws)}")
                 self.is_processing = False
                 return
 
@@ -3226,7 +3220,7 @@ class MainWindow(QMainWindow):
                 
                 for kw in keywords_data.get("keywords", {}).get(category, []):
                     if kw.lower() in clean_content:
-                        logging.info(f"Match found: {category}")
+                        logging.info(f"Match found: {category} - Keyword: {kw}")
                         allowed = True
                         matched_category = category.upper()
                         detected_keyword = kw
@@ -3245,7 +3239,7 @@ class MainWindow(QMainWindow):
                         regex_pattern = re.compile(pattern, flags)
                         regex_match = regex_pattern.search(clean_content)
                         if regex_match:
-                            logging.info(f"Regex match found: {category}")
+                            logging.info(f"Regex match found: {category} - Match: {regex_match.group(0)}")
                             allowed = True
                             matched_category = category.upper()
                             detected_keyword = regex_match.group(0)
@@ -4622,35 +4616,33 @@ class MainWindow(QMainWindow):
 
         hotkey_number = self.assigning_hotkey
         
-        global open_roblox_key, stop_sniper_key, toggle_sniper_key, loading_asset_skipper_key, main_menu_skipper_key
-        
         if key:
             if hotkey_number == 1:
-                open_roblox_key = key
+                CONFIG_DATA["open_roblox"] = key
                 self.hk1_display.setText(str(key))
             elif hotkey_number == 2:
-                stop_sniper_key = key
+                CONFIG_DATA["stop_sniper"] = key
                 self.hk2_display.setText(str(key))
             elif hotkey_number == 3:
-                toggle_sniper_key = key
+                CONFIG_DATA["toggle_sniper"] = key
                 self.hk3_display.setText(str(key))
             elif hotkey_number == 4:
-                loading_asset_skipper_key = key
+                CONFIG_DATA["loading_asset_skipper"] = key
                 self.hk4_display.setText(str(key))
             elif hotkey_number == 5:
-                main_menu_skipper_key = key
+                CONFIG_DATA["main_menu_skipper"] = key
                 self.hk5_display.setText(str(key))
         else:
             if hotkey_number == 1:
-                self.hk1_display.setText(str(open_roblox_key))
+                self.hk1_display.setText(str(CONFIG_DATA["open_roblox"]))
             elif hotkey_number == 2:
-                self.hk2_display.setText(str(stop_sniper_key))
+                self.hk2_display.setText(str(CONFIG_DATA["stop_sniper"]))
             elif hotkey_number == 3:
-                self.hk3_display.setText(str(toggle_sniper_key))
+                self.hk3_display.setText(str(CONFIG_DATA["toggle_sniper"]))
             elif hotkey_number == 4:
-                self.hk4_display.setText(str(loading_asset_skipper_key))
+                self.hk4_display.setText(str(CONFIG_DATA["loading_asset_skipper"]))
             elif hotkey_number == 5:
-                self.hk5_display.setText(str(main_menu_skipper_key))
+                self.hk5_display.setText(str(CONFIG_DATA["main_menu_skipper"]))
 
         self.hk1_assign_btn.setText("Assign")
         self.hk1_assign_btn.setEnabled(True)
@@ -7360,86 +7352,6 @@ class MainWindow(QMainWindow):
         scroll.setStyleSheet("border-radius: 12px;")
         layout.addWidget(scroll)
         return tab
-
-    def create_beta_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
-
-        frame = GradientFrame()
-        frame.setStyleSheet("border-radius: 12px;")
-        frame_layout = QVBoxLayout(frame)
-        frame_layout.setContentsMargins(20, 20, 20, 20)
-
-        title = QLabel("Beta Features")
-        title.setStyleSheet("font-size: 22px; font-weight: 600; color: #e0e0e0;")
-        title.setContentsMargins(0,0,0,20)
-        frame_layout.addWidget(title)
-
-        form_layout = QFormLayout()
-        form_layout.setVerticalSpacing(20)
-        form_layout.setHorizontalSpacing(30)
-
-        def add_checkbox_row(label_text, checkbox):
-            row_widget = QWidget()
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(3)
-            row_layout.addWidget(checkbox)
-            label = QLabel(label_text)
-            label.setStyleSheet("font-size: 16px; color: #e0e0e0; margin-left: 4px;")
-            row_layout.addWidget(label)
-            row_layout.addStretch()
-            form_layout.addRow(row_widget)
-
-        no_beta_features_label = QLabel("There are currently no Beta Features available for testing.")
-        no_beta_features_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                color: #fff;
-            }
-        """)
-        form_layout.addRow(no_beta_features_label)
-
-        frame_layout.addLayout(form_layout)
-
-        self.save_btn = QPushButton("Save Settings")
-        self.save_btn.setFixedHeight(45)
-        if CONFIG_DATA["gradient_theme"] == True:
-            self.save_btn.setStyleSheet("""
-                QPushButton {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #4a7bff, stop:1 #8a4caf);
-                    color: white;
-                    font-weight: 500;
-                    font-size: 16px;
-                    border-radius: 8px;
-                }
-                    QPushButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #5a8bff, stop:1 #9a5cbf);
-                }
-            """)
-        else:
-            self.save_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #8a4caf;
-                    color: white;
-                    font-weight: 500;
-                    font-size: 16px;
-                    border-radius: 8px;
-                }
-                    QPushButton:hover {
-                    background-color: #9a5cbf;
-                }
-            """)
-        self.save_btn.clicked.connect(self.save_settings_btn)
-        #frame_layout.addWidget(self.save_btn)
-        
-        layout.addWidget(frame)
-        layout.addStretch()
-        return tab
     
     def get_stylesheet(self):
         if CONFIG_DATA["gradient_theme"] == True:
@@ -7749,9 +7661,8 @@ class MainWindow(QMainWindow):
         self.keywords_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(2))
         self.servers_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(3))
         self.settings_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(4))
-        self.beta_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(5))
-        self.logs_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(6))
-        self.credits_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(7))
+        self.logs_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(5))
+        self.credits_btn.clicked.connect(lambda: self.tab_widget.setCurrentIndex(6))
 
         self.start_btn.clicked.connect(self.toggle_sniping)
 
@@ -7993,9 +7904,9 @@ class MainWindow(QMainWindow):
     def start_sniping(self):
         self.save_settings()
         self.load_settings()
-        global sniper_active, token
+        global sniper_active
         
-        if not token:
+        if not CONFIG_DATA["token"]:
             QMessageBox.warning(self, "Missing Token", "Please enter your Discord token!\n\nIf you have entered a Discord token, please attempt to start the sniper again.\nIf the issue persists, create a support thread in the Discord server. (NOT A TICKET!!)")
             return
 
@@ -8026,7 +7937,7 @@ class MainWindow(QMainWindow):
         asyncio.set_event_loop(loop)
         
         try:
-            loop.run_until_complete(self.discord_client.start(token))
+            loop.run_until_complete(self.discord_client.start(CONFIG_DATA["token"]))
         except Exception as e:
             logging.error(f"Discord client error: {e}")
             if "Improper token has been passed" in str(e):
@@ -8051,7 +7962,7 @@ class MainWindow(QMainWindow):
 
     async def run_discord_client(self):
         try:
-            await self.discord_client.start(token)
+            await self.discord_client.start(CONFIG_DATA["token"])
         except Exception as e:
             logging.error(f"Discord client error: {e}")
             if "Improper token has been passed" in str(e):
