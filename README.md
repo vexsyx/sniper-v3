@@ -14,7 +14,7 @@
 
 <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 20px 0;">
   <a href="https://github.com/vexsyx/sniper-v3/releases">
-    <img src="https://img.shields.io/badge/Version-3.0.0_BETA_6-4a7bff?style=for-the-badge&logo=github" alt="Latest Release">
+    <img src="https://img.shields.io/badge/Version-3.0.0_BETA_6.1-4a7bff?style=for-the-badge&logo=github" alt="Latest Release">
   </a>
   <!-- 
   change to this once you make a release :D
