@@ -6,7 +6,9 @@ a = Analysis(
     ['../main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('AUTOIT_DLL_PATH', 'autoit\\lib'),
+    ],
     hiddenimports=[
         'psutil',
         'keyboard',
@@ -35,7 +37,12 @@ a = Analysis(
         'datetime',
         'concurrent.futures',
         'win11toast',
-        'discord.py-self'
+        'discord.py-self',
+        'autoit',
+        'autoit.autoit',
+        'autoit.control',
+        'autoit.process',
+        'autoit.win'
     ],
     hookspath=[],
     hooksconfig={},
