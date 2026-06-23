@@ -1,5 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+import sys
+import site
+from pathlib import Path
+
 block_cipher = None
 
 a = Analysis(
@@ -7,13 +12,16 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('AUTOIT_DLL_PATH', 'autoit\\lib'),
+        ('snipercat.png', '.'),
+        ('snipercat.ico', '.'),
     ],
     hiddenimports=[
         'psutil',
         'keyboard',
-        'desktop_notifier',
-        'desktop_notifier.resources',
+        'pynput',
+        'pynput.keyboard',
+        'pynput.mouse',
+        'pyautogui',
         'PyQt6.QtSvg',
         'PyQt6.QtSvgWidgets',
         'PyQt6.QtNetwork',
@@ -34,25 +42,45 @@ a = Analysis(
         'platform',
         'webbrowser',
         'ctypes',
+        'ctypes.wintypes',
         'datetime',
         'concurrent.futures',
         'win11toast',
         'discord.py-self',
-        'autoit',
-        'autoit.autoit',
-        'autoit.control',
-        'autoit.process',
-        'autoit.win'
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageGrab',
+        'PIL.ImageOps',
+        'pkg_resources',
+        'pkg_resources.py2_warn',
+        'PIL._tkinter_finder',
+        'websockets',
+        'websockets.legacy',
+        'websockets.legacy.client',
+        'websockets.legacy.server',
+        'websockets.sync',
+        'websockets.version',
+        'multiprocessing',
+        'queue',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'autoit',
+        'autoit.*',
+        'matplotlib',
+        'numpy',
+        'pandas',
+        'scipy',
+        'tkinter',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
@@ -61,7 +89,7 @@ exe = EXE(
     a.binaries,
     a.zipfiles,
     a.datas,
-    name='Sol Sniper V3 [BETA 5]',
+    name='Sol Sniper V3.0.0 [BETA 7]',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
