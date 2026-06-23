@@ -55,24 +55,6 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [INFO] Locating AutoItX DLL path...
-python autoit_path.py > temp_dll_path.txt
-set /p AUTOIT_DLL_PATH=<temp_dll_path.txt
-set AUTOIT_DLL_PATH=%AUTOIT_DLL_PATH:DLL path: =%
-del temp_dll_path.txt
-
-if "%AUTOIT_DLL_PATH%"=="" (
-    echo [ERROR] Could not find AutoItX DLL path
-    pause
-    exit /b 1
-)
-
-echo [INFO] Found AutoItX DLL at: %AUTOIT_DLL_PATH%
-
-echo [INFO] Updating spec file with AutoItX DLL path...
-powershell -Command "(Get-Content sniper.spec) -replace 'AUTOIT_DLL_PATH', '%AUTOIT_DLL_PATH:\=\\%' | Set-Content sniper.spec"
-
-echo.
 echo [INFO] Starting build process...
 echo [INFO] Using sniper.spec configuration...
 

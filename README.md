@@ -1,6 +1,5 @@
-> [!WARNING]  
-> This Repo is **NOT** finished.<br>
-> It will hopefully be finished and fully updated before the first official release.
+> [!NOTE]  
+> This repository is actively maintained. Beta 7 is the latest release.
 
 <div align="center">
 
@@ -14,16 +13,11 @@
 
 <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 20px 0;">
   <a href="https://github.com/vexsyx/sniper-v3/releases">
-    <img src="https://img.shields.io/badge/Version-3.0.0_BETA_6.1-4a7bff?style=for-the-badge&logo=github" alt="Latest Release">
+    <img src="https://img.shields.io/github/v/release/vexsyx/sniper-v3?style=for-the-badge&logo=github&label=Latest%20Release&logoColor=white" alt="Latest Release">
   </a>
-  <!-- 
-  change to this once you make a release :D
-  https://img.shields.io/github/v/release/vexsyx/sniper-v3?style=for-the-badge&logo=github&label=Latest%20Release&logoColor=white 
-  -->
   <a href="LICENSE"><img src="https://img.shields.io/github/license/vexsyx/sniper-v3?style=for-the-badge&logo=nextdns&label=License&logoColor=white" alt="License"></a>
   <a href="https://python.org/downloads"><img src="https://img.shields.io/badge/Python-3.8+-ffd043?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
   <a href="#"><img src="https://img.shields.io/badge/Platform-Windows | macOS-2d2d2d?style=for-the-badge&logo=files&logoColor=white" alt="Platform"></a>
-  <a href="https://raw.githubusercontent.com/vexsyx/sniper-v3/main/Sol Sniper V3.exe"><img src="https://img.shields.io/badge/Standalone_EXE-Download-00c853?style=for-the-badge&logo=googleanalytics&logoColor=white" alt="Standalone EXE"></a>
 </div>
 
 </div>
@@ -46,35 +40,31 @@
 
 ## 🌟 Overview
 
-Sol Sniper V3 is a powerful, modern Sol's RNG based app specifically designed to snipe private servers. With its sleek interface and advanced detection algorithms, it automatically finds and joins private servers based on your customized keyword patterns, giving you the edge in sniping rare biomes and merchants.
+Sol Sniper V3 is a powerful, modern Sol's RNG based app specifically designed to snipe private servers. With its sleek interface and advanced detection, it automatically finds and joins private servers based on your customized keyword patterns, giving you the edge in sniping rare biomes and merchants.
 
 ---
 
 ## ⚡ Features
 
-### 🎯 Intelligent Detection
-| Feature | Description |
-|---------|-------------|
-| **Real-time Monitoring** | Just like a normal Discord client, it checks all incoming messages |
-| **Smart Keyword System** | Advanced pattern matching with RegEx support |
-| **Multi-Category Support** | Glitched, Dreamspace, Jester, Void Coin & custom categories |
-| **Biome Verification** | Auto-closes Roblox if the sniped Glitched/Dreamspace was fake/bait |
+### 🎯 Detection
+- Real-time Discord message monitoring
+- Smart keyword system with RegEx support
+- Multi-category support (Glitched, Dreamspace, Cyberspace, Singularity, Jester, Void Coin & custom)
+- Per-category pause durations
 
-### 🎨 Modern Experience
-| Feature | Description |
-|---------|-------------|
-| **Beautiful GUI** | Gradient themes with modern-ish design |
-| **Customizable Hotkeys** | Fully configurable keyboard shortcuts |
-| **Desktop Notifications** | Toast alerts for successful snipes (if enabled) |
-| **Performance Modes** | Adjustable UI settings for optimal performances (requires app restart on change) |
+### 🎨 Interface
+- Modern gradient-themed UI
+- Fully customizable hotkeys
+- Toast notifications
+- Performance modes
 
-### 🔧 Advanced Controls
-| Feature | Description |
-|---------|-------------|
-| **Server Management** | Multiple Discord servers & channels |
-| **Blacklist System** | Filter out bait and fake servers |
-| **Cross-Platform** | Windows & macOS support |
-| **Standalone EXE** | No installation required |
+### 🔧 Advanced
+- Account management (Windows only)
+- Server & channel management
+- Blacklist system
+- Protocol override with version checking
+- Import/Export for keywords and servers
+- Custom link sniping (RoPro, JoinRBX, RoSeal, FishStrap)
 
 ---
 
@@ -82,44 +72,17 @@ Sol Sniper V3 is a powerful, modern Sol's RNG based app specifically designed to
 
 ### 🎯 Quick Start (Recommended)
 
-**For most users, download the pre-built executable:**
+1. **Download** and **Run** the EXE from the [latest release](https://github.com/vexsyx/sniper-v3/releases/latest)
+2. **Configure** the settings to your liking
+3. **Start** the sniper
 
-1. **Download** the EXE file from the [latest release](https://github.com/vexsyx/sniper-v3/releases/latest)
-2. **Run** `Sol Sniper V3.exe` - No installation needed!
-3. **Configure** your settings and start sniping
-
-### 🐍 Python Version
-
-#### Prerequisites
-- Python 3.8 or higher
-- PIP in your system PATH
-- Roblox installed
-- Discord account
-
-#### Setup Steps
+### 🐍 Python Version (🍎 MacOS)
 
 ```bash
-# Clone the repository
 git clone https://github.com/vexsyx/sniper-v3.git
 cd sniper-v3
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Launch the application
 python main.py
-```
-
-#### Required Packages
-```txt
-requests
-PyQt6
-psutil
-discord.py-self
-aiohttp
-keyboard
-win11toast (Windows)
-desktop-notifier (macOS)
 ```
 
 ---
@@ -128,60 +91,30 @@ desktop-notifier (macOS)
 
 ### 📦 One-Click Solution
 
-Our standalone Windows executable provides the ultimate convenience:
-
-**🎁 Benefits:**
+**Benefits:**
 - ✅ No Python installation required
 - ✅ Single executable file
-- ✅ Portable and easy to share
+- ✅ Portable & sharable
 
-**⬇️ Download:**
-- Grab the latest `Sol Sniper V3.exe` from our [Releases](https://github.com/vexsyx/sniper-v3/releases)
-
-**🚀 Usage:**
-1. Download `Sol Sniper V3.exe`
-2. Double-click to launch
-3. Configure and start sniping!
+**Download:** Grab the latest EXE from our [Releases](https://github.com/vexsyx/sniper-v3/releases)
 
 ---
 
 ## ⚙️ Configuration
 
-### 🔧 Initial Setup Guide
+### 🔧 Initial Setup
 
-#### 1. Credentials Setup
-- Navigate to the **Sniper** tab
-- Enter your Discord token and Roblox cookie
-- Enable desired sniper categories
-
-#### 2. Server Configuration
-- Add Discord servers to monitor
-- Configure specific channels for each server
-- Test connectivity and permissions
-
-#### 3. Keyword Optimization
-- Customize detection keywords per category
-- Set up blacklists to avoid false positives
-- Configure advanced regex patterns
+1. Enter your Discord token (Sniper tab)
+2. Configure servers and channels (Servers tab)
+3. Set up keywords and blacklists (Keywords tab)
+4. Click "Start Sniping" (Sniper tab)
 
 <details>
-<summary><strong>🔐 Credential Setup Guide</strong></summary>
+<summary><strong>🔐 Discord Token Extraction</strong></summary>
 
-### ⚠️ Security Notice
-
-**Handle these credentials with extreme care:**
-- 🔒 Never share tokens with anyone
-- 🚫 Tokens provide full account access
-- ✅ Use exclusively for this application
-
-### Discord Token Extraction
-
-1. Visit the [Discord Web Client](https://discord.com/app)
-2. Log into your account
-3. Open Developer Tools (F12)
-4. Enable mobile mode (📱 icon)
-5. Switch to Console tab
-6. Paste and execute:
+1. Visit [Discord Web Client](https://discord.com/app)
+2. Log in and open Developer Tools (F12)
+3. In Console tab, paste:
 
 ```javascript
 window.webpackChunkdiscord_app.push([
@@ -206,77 +139,46 @@ console.log('%cSuccess!', 'font-size: 50px');
 console.log(`%cYour token has been copied to your clipboard!`, 'font-size: 16px');
 ```
 
-### Roblox Cookie Guide
-
-For Roblox `.ROBLOSECURITY` cookie extraction, follow our video tutorial:
-
-[🎥 Roblox Cookie Tutorial](https://www.youtube.com/watch?v=S3y1GTPMNBE)
-
-### 🛠️ Troubleshooting
-- **Token not found?** Ensure mobile mode is enabled
-- **Copy failed?** Manually copy from console output
-- **Errors?** Verify you're logged into Discord and using the [Web Client](https://discord.com/app)
-
 </details>
 
 ---
 
 ## ⌨️ Hotkeys
 
-### ⚡ Quick Actions
-
 | Hotkey | Default | Action |
 |--------|---------|--------|
 | Join Random Server | `-` | Launches random Sol's RNG server |
-| Pause Sniper | `[` | Temporary stop (configurable duration) |
-| Toggle Sniper | `F4` | Enable/disable sniper entirely |
+| Pause Sniper | `[` | Temporary pause (configurable duration) |
+| Toggle Sniper | `F4` | Enable/disable sniper |
+| Loading Asset Skipper | `F5` | Skips loading assets (hold) |
+| Main Menu Skipper | `F6` | Skips main menu (hold) |
 
-### 🎛️ Customization
-1. Navigate to **Hotkeys** tab
-2. Click **"Assign"** for any hotkey
-3. Press your desired key combination
-4. Save settings
+**Customization:** Navigate to Miscellaneous tab → Click "Assign" → Press desired key combination → Save.
 
 ---
 
 ## 🎮 Usage
 
-### 🚀 Getting Started
-
-#### 1. Launch & Configure
-- Open the application
-- Set up credentials in **Sniper** tab
-- Configure servers, keywords, and blacklist
-- Click **"Start Sniping"**
-
-#### 2. Monitor & React
-- Application auto-detects relevant server links
-- Desktop notifications alert you to detections (if enabled)
-- Roblox launches automatically with correct server
-
-#### 3. Advanced Operations
-- Create custom categories for specific events
-- Use regex patterns for complex detection
+1. Launch and configure credentials
+2. Set up servers, keywords, and blacklist
+3. Click "Start Sniping"
+4. App auto-detects server links in channels/servers you have set up and have access to and launches Roblox
+5. Desktop notifications alert you to successful snipes
 
 ---
 
 ## 🔧 Troubleshooting
 
-### 🐛 Common Issues
-
 | Issue | Solution |
 |-------|----------|
-| **App won't start** | Check Python 3.8+ (Python version) or re-download EXE |
-| **No detections** | Verify token validity and config |
-| **Roblox not launching** | Ensure Roblox is installed and updated and that you have specified the correct Launch Protocol |
-| **Performance issues** | Enable "Still Background" in settings |
+| **App won't start** | Check Python 3.8+ or re-download EXE |
+| **No detections** | Verify token and server configuration, as well as checking if you have access to that channel |
+| **Roblox not launching** | Ensure Roblox is installed and protocol is set correctly, we recommend you use the [Web Version](https://roblox.com/download) of Roblox as it works better |
+| **Performance issues** | Enable "Still Background" in the Miscellaneous tab |
 
-### 📞 Getting Help
-
-1. **Check** [Issues](https://github.com/vexsyx/sniper-v3/issues) page
-2. **Review** troubleshooting guide above
-3. **Join** our [Discord Community](https://discord.gg/RPcPUp47YD)
-4. **Create** detailed issue reports
+**Getting Help:**
+- Check [Issues](https://github.com/vexsyx/sniper-v3/issues)
+- Join [Discord Community](https://discord.gg/solsniper)
 
 ---
 
@@ -284,82 +186,37 @@ For Roblox `.ROBLOSECURITY` cookie extraction, follow our video tutorial:
 
 ### 🤖 Automated Build (Windows)
 
-We provide an automated build script for convenience:
-
 ```bash
 cd builder
 ./build.bat
 ```
 
-**The script automatically:**
-- ✅ Checks Python installation
-- ✅ Installs PyInstaller if needed
-- ✅ Builds using `sniper.spec`
-- ✅ Outputs `Sol Sniper V3.exe`
+### 🛠️ Manual Build (Requires Python)
 
-### 🛠️ Manual Build
-
-**Requirements:**
-- Python 3.8+
-- PyInstaller
-- All dependencies
-
-**Build commands:**
 ```bash
-# Install PyInstaller
 pip install pyinstaller
-
-# Build using spec file
 cd builder
 pyinstaller sniper.spec
 ```
 
 **Output:** Executable in `dist` folder
 
-### ⚙️ Build Configuration
-
-The `sniper.spec` includes:
-- One-file bundle setup
-- Icon and version info
-- Hidden imports for dependencies
-- File size optimizations
-
 ---
 
 ## 🤝 Contributing
 
-### 🌟 How You Can Help
+### How You Can Help
 
-We love community contributions! Here's how to get involved:
+- **Report issues** with detailed steps
+- **Suggest features** with use cases
+- **Submit PRs** following our guidelines
 
-#### 🐛 Reporting Issues
-- Use issue templates
-- Provide detailed reproduction steps
-- Include system info and logs
-
-#### 💡 Feature Requests
-- Check existing issues first <br>(Both on the Repo and Discord)
-- Explain use case and benefits
-- Consider implementation complexity
-
-#### 💻 Code Contributions
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit pull request
-
-#### 🏗️ Development Setup
+**Development Setup:**
 ```bash
-# Clone repository
 git clone https://github.com/vexsyx/sniper-v3.git
 cd sniper-v3
-
-# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -369,60 +226,37 @@ pip install -r requirements.txt
 
 This project is licensed under **GNU General Public License v3.0 (GPLv3)**.
 
-### 📜 License Summary
-
-| Permission | Condition |
-|------------|-----------|
-| ✅ Commercial use | ✅ Same license |
-| ✅ Distribution | ✅ Disclose source |
-| ✅ Modification | ✅ State changes |
-| ✅ Patent use | ✅ Copyright notice |
-
-### 🆓 Your Rights
-- Use software for any purpose
-- Study and adapt the code
+**Your Rights:**
+- Use for any purpose
+- Study and modify
 - Redistribute copies
 - Improve and release enhancements
 
-### 📝 Your Responsibilities
-- **Credit** original authors
-- **Same License** for derivatives
-- **Disclose Source** when distributing
-- **Keep Free** no additional restrictions
+**Your Responsibilities:**
+- Credit original authors
+- Same license for derivatives
+- Disclose source when distributing
 
-**Full license:** [LICENSE](LICENSE)
+Full license: [LICENSE](LICENSE)
 
 ---
 
 ## 👥 Credits
 
-### 🧑‍💻 Core Team
-
 | Member | Role | Contact |
 |--------|------|---------|
 | **vex** | Lead Developer & Maintainer | [GitHub](https://github.com/vexsyx) \| [Discord](https://discord.com/users/1018875765565177976) |
 | **yeswe** | Core Contributor | [GitHub](https://github.com/the2727) \| [Discord](https://discord.com/users/463575384961581066) |
-| **PJ** | Core Contributor | [Discord](https://discord.com/users/773604524573196298) |
 
-### 🙏 Special Thanks
-- Our amazing beta testers
-- The Sol's RNG community
-
-### 💝 Support Developers
-Consider supporting our developers:
-
-- [🎁 Donate to vex](https://www.roblox.com/games/17060128444/Aura-Game-Yes#!/store)
-- [🎁 Donate to yeswe/PJ](https://www.roblox.com/games/121743595575824/donate#!/store)
+**Support Development:** [Donate to Sol's Sniper](https://www.roblox.com/games/86163153952489/Sols-Sniper-Donation-Game#!/store)
 
 ---
 
 ## 💬 Support
 
-### 📚 Resources
-- **Documentation**: This README & project wiki
-- **Community**: [Discord Server](https://discord.gg/RPcPUp47YD)
-- **Issues**: [GitHub Issues](https://github.com/vexsyx/sniper-v3/issues)
-- **Contact**: Via Discord profiles
+- **Documentation:** This README
+- **Community:** [Discord Server](https://discord.gg/solsniper)
+- **Issues:** [GitHub Issues](https://github.com/vexsyx/sniper-v3/issues)
 
 ---
 
@@ -430,14 +264,12 @@ Consider supporting our developers:
 
 ## 🚀 Ready to Snipe?
 
-**Get started now with our standalone executable or Python version!**
-
-[![Download EXE](https://img.shields.io/badge/Download_EXE-2d2d2d?style=for-the-badge&logo=googleanalytics&logoColor=white)](https://raw.githubusercontent.com/vexsyx/sniper-v3/main/Sol%20Sniper%20V3.exe)
+[![Download EXE](https://img.shields.io/badge/Download_EXE-2d2d2d?style=for-the-badge&logo=googleanalytics&logoColor=white)](https://github.com/vexsyx/sniper-v3/releases/latest)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-2d2d2d?style=for-the-badge&logo=github)](https://github.com/vexsyx/sniper-v3)
-[![Discord](https://img.shields.io/discord/1271189425459826699?style=for-the-badge&logo=discord&label=Discord&labelColor=5865F2)](https://discord.gg/RPcPUp47YD)
+[![Discord](https://img.shields.io/discord/1271189425459826699?style=for-the-badge&logo=discord&label=Discord&labelColor=5865F2)](https://discord.gg/solsniper)
 
 **Made with ❤️ by the Sol Sniper Team**
 
-*Please use responsibly and respect Discord's Terms of Service as well as all Biome Hunt Servers' rules.*
+*Please use responsibly and respect Discord's Terms of Service and Biome Hunt Servers' rules.*
 
 </div>

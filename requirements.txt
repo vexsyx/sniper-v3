@@ -5,4 +5,3 @@ discord.py-self
 aiohttp
 keyboard
 win11toast
-desktop-notifier
