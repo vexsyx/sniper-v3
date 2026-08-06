@@ -1,3 +1,4 @@
+# Common dependencies (all platforms)
 requests
 PyQt6
 psutil
@@ -7,5 +8,10 @@ pyautogui
 pynput
 websockets
 pyperclip
-win11toast
-pywin32
+
+# Windows-specific (toast notifications and Win32 API)
+win11toast; sys_platform == 'win32'
+pywin32; sys_platform == 'win32'
+
+# macOS-specific (Quartz, Foundation, etc.)
+pyobjc; sys_platform == 'darwin'
