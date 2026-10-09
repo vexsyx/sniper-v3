@@ -6,7 +6,6 @@ import re
 import time
 import random
 import requests
-from requests import RequestException
 import urllib.request
 from urllib.parse import urlparse, parse_qs
 import tempfile
@@ -15,21 +14,19 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem, QLineEdit, QCheckBox, QComboBox,
-    QStackedWidget, QTabWidget, QTextEdit, QScrollArea, QFrame, QSizePolicy,
+    QTabWidget, QTextEdit, QScrollArea, QFrame, QSizePolicy,
     QAbstractItemView, QFormLayout, QGroupBox, QDialog, QTreeWidget, 
     QTreeWidgetItem, QHeaderView, QProgressBar, QMessageBox, QTableWidget, 
-    QTableWidgetItem, QInputDialog, QDialogButtonBox, QHBoxLayout, QVBoxLayout, 
-    QDialog, QPushButton, QLabel, QLineEdit, QWidget, QHeaderView, QFileDialog,
-    QColorDialog
+    QTableWidgetItem, QDialogButtonBox, QHBoxLayout, QVBoxLayout, 
+    QDialog, QPushButton, QLabel, QLineEdit, QWidget, QHeaderView, QFileDialog
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QTimer, QSize, QStandardPaths, QRect, QPoint, QUrl, QEvent, QRectF, QByteArray, QMetaObject, Q_ARG, QEventLoop
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QTimer, QSize, QStandardPaths, QRect, QPoint, QEvent, QRectF, QByteArray
 from PyQt6.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QFontDatabase, QPainter, QBrush, QPen, QLinearGradient, QPainterPath, QColor, QRegion, QTransform, QIntValidator
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 import webbrowser
 import psutil
 import discord
-from discord.ext import commands
 import aiohttp
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -53,7 +50,6 @@ if platform.system() == "Windows":
     from win11toast import toast
     import win32gui
     import win32con
-    import win32api
     import win32process
     import winreg
     import ctypes
@@ -62,7 +58,6 @@ if platform.system() == "Windows":
 
 if platform.system() == "Darwin":
     import Quartz  # type: ignore
-    from Foundation import NSBundle  # type: ignore
 
 def resource_path(relative_path):
     try:
@@ -160,7 +155,7 @@ JOIN_RBX_PRIVATE_SERVER_PATTERN = re.compile(r'https?://join-rbx\.vexsys\.site/p
 
 CURRENT_VERSION = "3.0.0"
 IS_BETA_VERSION = True
-BETA_VERSION = 7
+BETA_VERSION = "7.1"
 IS_PRE_RELEASE = False
 LOCKED_PRE_RELEASE = False
 PRE_RELEASE_VERSION = 0
@@ -4172,9 +4167,9 @@ class MainWindow(QMainWindow):
                 parts.append(('pre', pre_num))
             
             # handle beta suffix (e.g., -beta7)
-            beta_match = re.search(r'-beta(\d+)$', v)
+            beta_match = re.search(r'-beta(\d+(?:\.\d+)?)$', v)
             if beta_match:
-                beta_num = int(beta_match.group(1))
+                beta_num = float(beta_match.group(1))
                 v = v[:beta_match.start()]
                 parts.insert(0, ('beta', beta_num))
             
@@ -4915,7 +4910,7 @@ class MainWindow(QMainWindow):
                 executable = self.find_roblox_executable()
                 
                 if executable and os.path.exists(executable):
-                    subprocess.Popen(f'"{executable}" "{uri}"', shell=True)
+                    subprocess.Popen([executable, uri])
                     logging.info(f"Launched Roblox with direct execution")
                 else:
                     os.startfile(uri)
@@ -4934,7 +4929,7 @@ class MainWindow(QMainWindow):
             subprocess.Popen(['open', uri])
         else:
             try:
-                subprocess.Popen([uri], shell=True)
+                subprocess.Popen(["xdg-open", uri])
             except:
                 pass
 
@@ -12050,23 +12045,34 @@ class WebsocketManager:
         self.blacklisted = False
         self._patch_process_server_link()
         
-        if hasattr(self, 'auth_token') and self.auth_token:
-            pass
-        else:
-            self.auth_token = CONFIG_DATA.get("token", "")
+        self.auth_token = str(CONFIG_DATA.get("ws_token") or self.auth_token or "")
         
         self.auth_event = asyncio.Event()
         self.auth_result = (False, None, 0)
+
+        if not self.auth_token:
+            message = "A dashboard connection token is required"
+            logging.error(f"WebSocket authentication failed: {message}")
+            self.auth_failed = True
+            self.running = False
+            self._unpatch_process_server_link()
+            self.auth_result = (False, message, None)
+            self.main_window.auth_error_signal.emit(message)
+            return self.auth_result
         
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
         
-        try:
-            await asyncio.wait_for(self.auth_event.wait(), timeout=20.0)
-        except asyncio.TimeoutError:
+        authenticated = await asyncio.to_thread(self.auth_event.wait, 20.0)
+        if not authenticated:
             logging.error("WebSocket auth timeout")
-            self.running = False
-            return False, None, 0
+            self.auth_failed = True
+            self.auth_result = (False, "Dashboard authentication timed out", None)
+            self.main_window.auth_error_signal.emit(
+                "Dashboard authentication timed out"
+            )
+            self.stop()
+            return self.auth_result
         
         return self.auth_result
 

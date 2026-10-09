@@ -16,11 +16,11 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Sol\'s Sniper'),
           StringStruct('FileDescription', 'Sol Sniper - Private Server Sniper'),
-          StringStruct('FileVersion', '3.0.0'),
+          StringStruct('FileVersion', '3.0.0-beta7.1'),
           StringStruct('InternalName', 'Sol Sniper'),
           StringStruct('OriginalFilename', 'Sol Sniper.exe'),
           StringStruct('ProductName', 'Sol Sniper'),
-          StringStruct('ProductVersion', '3.0.0'),
+          StringStruct('ProductVersion', '3.0.0-beta7.1'),
           StringStruct(u'LegalCopyright', u'Copyright © 2025 Sol\'s Sniper')
         ]
       )

@@ -1,5 +1,5 @@
 > [!NOTE]  
-> This repository is actively maintained. Beta 7 is the latest release.
+> This repository is actively maintained. Beta 7.1 is the latest release.
 
 <div align="center">
 
